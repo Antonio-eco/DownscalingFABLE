@@ -1,0 +1,335 @@
+---
+title: "Downscaling"
+author: "Clara Douzal"
+date: "2023-10-24"
+output: pdf_document
+params:
+  variable1 : country
+  variable2 : pathway 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include = FALSE}
+library(geojsonio)
+library(here)
+library(raster)
+library(dplyr)
+library(tidyr)
+library(downscalr)
+```
+
+```{r temporary settings}
+country = "CHN"
+pathway = "CurrentTrends"
+
+
+```
+
+This report is generated for **`r country`** for the pathway **`r pathway`**.
+
+# Checking input data
+
+```{r data load, include=FALSE}
+
+#Loading all the country specific data downloaded from Earth engine
+
+#geospatial data
+
+population <- geojson_read(here("Data", country, "Population2020.geojson"),  what = "sp")
+population.df <- population@data
+
+ProtectedAreas <- geojson_read(here("Data", country, "ProtectedAreas.geojson"),  what = "sp")
+ProtectedAreas.df <- ProtectedAreas@data
+
+Travel <- geojson_read(here("Data", country, "TravelTime.geojson"),  what = "sp")
+Travel.df <- Travel@data
+
+LandCover <- geojson_read(here("Data", country, "LandCoverCopernicus2019.geojson"),  what = "sp")
+LandCover.df <- LandCover@data
+
+LandCoverChange <- geojson_read(here("Data", country, "LandCoverChangeHILDA2018_2019.geojson"),  what = "sp")
+LandCoverChange.df <- LandCoverChange@data
+
+ForestManagement <- geojson_read(here("Data", country, "ForestManagement.geojson"),  what = "sp")
+ForestManagement.df <- ForestManagement@data
+
+#mapping
+
+map_HILDA <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
+                        sheet = "HILDA")
+
+map_Copernicus <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
+                                sheet = "Copernicus")
+```
+
+```{r create raster for maps, include = FALSE}
+#raster to use for plots
+ext <- extent(Travel)
+res <- 0.5
+raster_layer <- raster(ext, res = res)
+rasterized_layer <- rasterize(Travel, raster_layer, field = "fid")
+```
+
+Check in the table below that all land cover of interest and all possible transitions are included in the land transition matrix.
+
+-   The structure of the matrix should be such that you have the same rownames and colnames. Check that you have all land covers, by default it should be cropland, forest, new forest, otherland, pasture and urban.
+
+-   The matrix should be filled with the same number in each cell (i.e. the number of pixels for your country's grid representation in 50km x 50km)
+
+```{r changing LandCoverChange data structure , echo = FALSE, message = FALSE}
+country_luc <- LandCoverChange.df %>% 
+  select(fid) %>% 
+  mutate(temp = 1) %>% 
+  full_join(map_HILDA%>%  mutate(code = as.character(code)) %>% mutate(temp = 1), relationship = "many-to-many") %>% 
+  left_join(LandCoverChange.df %>% 
+  pivot_longer(-c(id, fid), values_to = "AreaPerCode") %>% 
+  #associate land cover code with right name
+  mutate(name = stringr::str_remove(name, "X")) %>% 
+  left_join(map_HILDA %>%  mutate(code = as.character(code)), by = c("name" = "code")),
+  relationship = "many-to-many") %>%
+  #remove ocean and water
+  filter(!(from %in% c("ocean", "water"))) %>% 
+  mutate(AreaPerCode = as.numeric(AreaPerCode)) %>% 
+  #group by cell
+  group_by(fid) %>% 
+  #compute the total area in that cell
+  mutate(TotalArea = sum(AreaPerCode, na.rm = T)) %>% 
+  #compute the share of each land cover per cell
+  mutate(value = AreaPerCode/TotalArea) %>%
+  #set the right variable names to use in DownscalR package
+  group_by(fid, from, to) %>% 
+  summarise(value = sum(value, na.rm = T)) %>% 
+  rename(ns = fid,
+         lu.from = from,
+         lu.to = to) %>% 
+  mutate(Ts = 2018) %>% 
+  dplyr::select(ns, lu.from, lu.to, Ts, value) %>% 
+  mutate(value = ifelse(is.na(value), 0, value)) %>% 
+  ####if lu.to is forest then it is new forest for FABLE design
+  mutate(lu.to = ifelse(lu.to == "forest", "newforest", lu.to)) %>% 
+  rbind(data.frame(ns = unique(LandCoverChange.df$fid),
+                   lu.from = rep(c("cropland", "newforest", "otherland", "pasture", "urban", "forest"), each = length(unique(LandCoverChange.df$fid))),
+                   lu.to = "forest",
+                   Ts = 2018,
+                   value = 0)) %>% 
+  mutate(value = ifelse(lu.from == "forest" & lu.to == "forest", 1, value)) %>% 
+  rbind(data.frame(ns = unique(LandCoverChange.df$fid),
+                   lu.from = "newforest",
+                   lu.to = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), each = length(unique(LandCoverChange.df$fid))),
+                   Ts = 2018,
+                   value = 0)) 
+
+table(country_luc$lu.from, country_luc$lu.to)
+  
+```
+
+```{r create Xmat matric of explanatory variables, echo = FALSE, message = FALSE}
+#Right now only has land cover data but should contain all the explanatory variables to compute the priors
+Xmat <- LandCover.df %>% 
+  pivot_longer(-c(id, fid), values_to = "AreaPerCover") %>%
+  mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
+  mutate(name = stringr::str_remove(name, "X")) %>% 
+  #associate the right land cover names
+  left_join(map_Copernicus %>%  mutate(code = as.character(code)), by = c("name" = "code")) %>% 
+  group_by(fid, LandCover) %>% 
+  #compute the area per cover class in each cell
+  summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
+  dplyr::select(fid, LandCover, value) %>% 
+  #pivot wider to add the intercept value
+  pivot_wider(names_from = "LandCover", values_from = "value") %>% 
+  mutate(Intercept = 1) %>% 
+  #doesn't exist in copernicus and hilda need to add it
+  mutate(newforest = 1) %>% 
+  #pivot back longer to fit the DownscalR package structure
+  pivot_longer(-fid, values_to = "value", names_to = "ks") %>% 
+  rename(ns = fid)
+```
+
+```{r changing land cover structure to create lu_levels, echo = FALSE, message = FALSE}
+
+#land use level per cell per land cover class
+
+lu_levels <- LandCover.df %>% 
+  pivot_longer(-c(id, fid), values_to = "AreaPerCover") %>%
+  mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
+  mutate(name = stringr::str_remove(name, "X")) %>% 
+  #associate the right land cover names
+  left_join(map_Copernicus %>%  mutate(code = as.character(code)), by = c("name" = "code"))%>% 
+  filter(!(LandCover %in% c("ocean", "water"))) %>% 
+  group_by(fid, LandCover) %>% 
+  #Compute the area per cover class per cell (i.e. this is not a share, should it be a share?)
+  summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
+  rename(ns = fid,
+         lu.from = LandCover) %>% 
+  dplyr::select(ns, lu.from, value) %>% 
+  rbind(data.frame(ns = unique(LandCover.df$fid),
+                   lu.from = "newforest",
+                   value = 0)) 
+
+```
+
+```{r create df used for priors relative to the country, echo = FALSE, message=FALSE}
+country_df <- list(xmat = tibble(Xmat), lu_levels = tibble(lu_levels))
+```
+
+# Checking FABLE land use change projections to downscale
+
+Check in the table below that in the land use changes projected in your calculator, all land cover of interest and all transitions are included in the land transition matrix.
+
+-   The structure of the matrix should be such that you have the same rownames and colnames. Check that you have all land covers, by default it should be cropland, forest, new forest, otherland, pasture and urban.
+
+-   The matrix should be filled with 10 in each cell (i.e. the number of year periods in the calculator).
+
+-   The diagonal should be filled with zeros.
+
+```{r FABLE data prep, echo = FALSE, message = FALSE}
+FABLE <- readxl::read_excel(here("Data", country, "FABLE.xlsx"),
+                            sheet = pathway) %>% #In calculator, sheet 4_calc_land, 
+  #table calc_landmatrix, columns LandCoverInit	YearStart	YearEnd	ToForest	ToOtherLand	ToCropland	ToPasture	ToUrban	ToNewForest
+  dplyr::select(-YearStart) %>% 
+  pivot_longer(-c(YearEnd, LandCoverInit), 
+               values_to = "value", 
+               names_to = "lu.to") %>% 
+  mutate(lu.to = stringr::str_remove(lu.to, "To")) %>% 
+  mutate(lu.from = tolower(LandCoverInit),
+         lu.to = tolower(lu.to),
+         times = YearEnd) %>% 
+  dplyr::select(times, lu.from, lu.to, value) %>% 
+  #do not keep land cover that remains the same
+  filter(!(lu.from == lu.to))
+  
+
+table(FABLE$lu.from, FABLE$lu.to)
+```
+
+# Estimate MNL model
+
+```{r prep data, echo = FALSE, message=FALSE, include = FALSE}
+Yraw <- country_luc 
+
+results_MNL <- data.frame()
+pred_coeff_long <- data.frame()
+country_start_areas <- data.frame()
+
+for(cur_LU.from in c("urban", "cropland", "pasture", "forest", "otherland", "newforest")){
+  
+ Y <- dplyr::filter(Yraw,lu.from == cur_LU.from & Ts == 2018) %>% #changes 2000 to 2010
+  tidyr::pivot_wider(names_from = lu.to) %>%
+  tibble::column_to_rownames(var = "ns") %>%
+  dplyr::select(-c(lu.from, Ts))
+ 
+ X <- country_df$xmat %>% 
+    tidyr::pivot_wider(names_from = "ks") %>%
+    dplyr::arrange(match(ns,Y$ns)) %>%
+    tibble::column_to_rownames(var = "ns") 
+  
+  baseline <- which(colnames(Y) == cur_LU.from)
+
+  # Decreased niter = 100 and nburn = 50 for faster computation 
+  temp_results_MNL <- mnlogit(as.matrix(X), as.matrix(Y), baseline, niter = 100, nburn = 50, A0 = 10^4)
+  
+  pred_coeff <- as.data.frame(apply(temp_results_MNL$postb[,-baseline,],c(1,2),mean))
+  
+  pred_coeff_long <- pred_coeff_long %>%
+    rbind(
+    pred_coeff %>% tibble::rownames_to_column(var="ks") %>%
+  tidyr::pivot_longer(!ks, names_to = "lu.to", values_to="value") %>%
+  dplyr::arrange(lu.to) %>%
+  tibble::add_column(lu.from=cur_LU.from, .after="ks")
+    )
+  
+  ## starting area should provide information on area of each (higher resolution) grid cell, i.e ns
+country_start_areas <- country_start_areas %>%
+  rbind(
+    dplyr::filter(country_df$lu_levels, lu.from == cur_LU.from) %>% mutate(times = 2020)
+  )
+
+}
+```
+
+```{r, echo = FALSE, message=FALSE}
+X_long <-  X %>% tibble::rownames_to_column(var="ns") %>%
+  tidyr::pivot_longer(!ns, names_to="ks", values_to = "value")
+
+## Downscaling computation and results
+
+results_DS <- downscale(targets = FABLE, 
+                        start.areas =  country_start_areas, 
+                        xmat = X_long, 
+                        betas = pred_coeff_long)
+
+downscaled_LUC <- results_DS$out.res
+
+```
+
+# Land-use map
+
+```{r, echo = FALSE, message=FALSE}
+LUC_plot <- LUC_plot(results_DS, rasterized_layer)
+LUC_plot$LUC.plot 
+
+
+```
+
+# Land-use change map
+
+```{r}
+
+# Need to tweak it a bit to make sure that we have loss and gains, this is not the case right now (27/10/2023)
+
+
+results_DS_LUC <- results_DS
+results_DS_LUC$out.res <- results_DS_LUC$out.res %>% 
+  #remove the stable transition
+  filter(!(lu.from == lu.to)) %>% 
+  #compute the loss and gains within stable land cover
+  rbind(
+    results_DS_LUC$out.res %>% 
+    filter(lu.from == lu.to) %>% 
+    arrange(lu.to, ns, times) %>% 
+    group_by(lu.to, ns) %>% 
+    mutate(value = value - lag(value))
+  ) %>% 
+  #remove first time periode for stable transition
+  filter(!is.na(value))
+
+color = "PRGn"
+label = "Area gains and losses in ha per pixel"
+Transition_plot <- LUC_plot(results_DS_LUC, rasterized_layer, 
+                            color = "PRGn",
+                            label = "Area gains and losses in ha per pixel")
+
+limit <- max(abs(Transition_plot[["plot.df"]]$value)) * c(-1, 1)
+Transition_plot$LUC.plot + 
+  ggplot2::scale_fill_gradient2()
+#palette = color, 
+                                #name=label)#, 
+                                #direction = 1)#, 
+                                #limit = limit)
+
+
+plot_obj <- ggplot2::ggplot() +
+    ggplot2::geom_tile(data=Transition_plot[["plot.df"]], 
+                       aes(x=x, y=y, 
+                           # fill=factor(cut(value, breaks =  unique(quantile(value, probs = seq(0.,1,0.10))))),
+                           fill = factor(cut(value, 
+                                             breaks = fullseq(range(value),(range(value)[2]-range(value)[1])/8))),
+                           group=lu.to), 
+                       alpha=0.8) +
+    ggplot2::scale_fill_manual(values = RColorBrewer::brewer.pal(9, "PRGn"),#palette = "PRGn",
+                                  #direction = 1,
+                                  #limit = limit#,
+                                  #name=label
+                                  name = NULL)+
+    ggplot2::coord_equal() +
+    ggthemes::theme_map() +
+    ggplot2::theme(legend.position="bottom") +
+    ggplot2::theme(legend.key.width=unit(2, "cm"))+
+    ggplot2::facet_grid(times~lu.to)
+  
+plot_obj
+
+```
