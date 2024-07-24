@@ -22,7 +22,7 @@ library(downscalr)
 ```
 
 ```{r temporary settings}
-country = "ARG"
+country = "GBR"
 pathway = "CurrentTrends"
 # pathway = "NationalCommitments"
 # pathway = "GlobalSustainability"
@@ -42,7 +42,7 @@ This report is generated for **`r country`** for the pathway **`r pathway`**.
 
 population <- geojson_read(here("Data", country, "Population2020.geojson"),  what = "sp")
 population.df <- population@data %>% 
-  mutate(TotalPop = scale(TotalPop, scale = T))
+  mutate(TotalPop = c(scale(TotalPop, scale = T)))
 
 ProtectedAreas <- geojson_read(here("Data", country, "ProtectedAreas.geojson"),  what = "sp")
 ProtectedAreas.df <- ProtectedAreas@data 
