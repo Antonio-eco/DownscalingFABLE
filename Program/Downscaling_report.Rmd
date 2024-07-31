@@ -21,7 +21,7 @@ library(tidyr)
 library(downscalr)
 ```
 
-```{r temporary settings}
+```{r temporary settings, include = FALSE}
 country = "GBR"
 pathway = "CurrentTrends"
 # pathway = "NationalCommitments"
@@ -41,8 +41,8 @@ This report is generated for **`r country`** for the pathway **`r pathway`**.
 #geospatial data
 
 population <- geojson_read(here("Data", country, "Population2020.geojson"),  what = "sp")
-population.df <- population@data %>% 
-  mutate(TotalPop = c(scale(TotalPop, scale = T)))
+population.df <- population@data #%>% 
+  #mutate(TotalPop = c(scale(TotalPop, scale = T)))
 
 ProtectedAreas <- geojson_read(here("Data", country, "ProtectedAreas.geojson"),  what = "sp")
 ProtectedAreas.df <- ProtectedAreas@data 
@@ -66,6 +66,9 @@ map_HILDA <- readxl::read_excel(here("Data/mapping_code.xlsx"),
 
 map_Copernicus <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
                                 sheet = "Copernicus")
+
+map_ForestMgmt <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
+                                sheet = "ForestManagement")
 ```
 
 ```{r create raster for maps, include = FALSE}
@@ -131,7 +134,7 @@ table(country_luc$lu.from, country_luc$lu.to)
 
 ```{r create Xmat matric of explanatory variables, echo = FALSE, message = FALSE}
 #Right now only has land cover data but should contain all the explanatory variables to compute the priors
-Xmat <- LandCover.df %>% 
+Xmat_LU <- LandCover.df %>% 
   pivot_longer(-c(id, fid), values_to = "AreaPerCover") %>%
   mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
   mutate(name = stringr::str_remove(name, "X")) %>% 
@@ -143,17 +146,71 @@ Xmat <- LandCover.df %>%
   dplyr::select(fid, LandCover, value) %>% 
   #pivot wider to add the intercept value
   pivot_wider(names_from = "LandCover", values_from = "value") %>% 
-  mutate(Intercept = 1) %>% 
   #doesn't exist in copernicus and hilda need to add it
   #mutate(newforest = 1) %>% 
-  left_join(Travel.df %>% select(fid, MeanTravelTime)) %>% 
-  left_join(population.df %>% select(fid, TotalPop)) %>% 
-  #To add for GBR to have a non singulary matrix
+#To add for GBR to have a non singulary matrix
   select(-unknwon) %>% 
+  #remove the water and ocean land cover
+  select(-c(water, ocean)) %>% 
+  #compute the share of each land use class within a pixel
+  rowwise() %>%
+  mutate(total = sum(c_across(cropland:urban)),
+         across(c(cropland, forest, otherland, pasture, urban),
+                .fns = ~ .x / total, .names = "{.col}_share")) %>%
+  ungroup() %>%
+  select(-total)
+#summary(Xmat_LU)
+
+#ForestManagement
+Xmat_ForestManagement <- ForestManagement.df %>% 
+  pivot_longer(-c(id, fid), values_to = "AreaPerCover") %>%
+  mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
+  mutate(name = stringr::str_remove(name, "X")) %>% 
+  #associate the right land cover names
+  left_join(map_ForestMgmt %>%  mutate(code = as.character(code)), by = c("name" = "code")) %>% 
+  group_by(fid, type) %>% 
+  #compute the area per cover class in each cell
+  summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
+  dplyr::select(fid, type, value) %>% 
+  #pivot wider to add the intercept value
+  pivot_wider(names_from = "type", values_from = "value") %>%
+  #compute the share of each forest management within a pixel, set to 0 if no forest in the pixel
+  rowwise() %>%
+  mutate(total = sum(c_across(all_of(setdiff(names(.), "fid")))),
+         across(all_of(setdiff(names(.), "fid")),
+                .fns = ~ if_else(total == 0, 0, .x / total), .names = "{.col}_share")) %>%
+  ungroup() %>%
+  select(-total) %>%
+  #add the share of forest in the pixel from LU.df
+  left_join(Xmat_LU %>% select(fid, forest_share)) %>% 
+  #compute the share of forest under specific forest management practice in each pixel
+  mutate(across(contains("share"), ~ .x * forest_share)) %>% 
+  select(-forest_share) %>% 
+  select(c(fid, contains("share")))
+
+#Mean Travel time
+Xmat_Travel <- Travel.df %>% select(fid, MeanTravelTime) %>% 
+  mutate(log_MeanTravelTime = log(MeanTravelTime)) %>% 
+  select(-MeanTravelTime)
+#summary(Xmat_Travel)
+
+#Population  
+Xmat_pop <- population.df %>% select(fid, TotalPop) %>% 
+  mutate(log_pop = log(TotalPop)) %>% 
+  select(-TotalPop)
+#summary(Xmat_pop)  
+  
+
+Xmat <- Xmat_LU %>% 
+  select(-forest_share) %>% 
+  mutate(Intercept = 1) %>% 
+  left_join(Xmat_Travel) %>% 
+  left_join(Xmat_pop) %>% 
+  left_join(Xmat_ForestManagement) %>% 
+  select(-c(cropland, otherland, urban, pasture, forest)) %>% #, SRP_share)) %>% 
   #pivot back longer to fit the DownscalR package structure
   pivot_longer(-fid, values_to = "value", names_to = "ks") %>% 
   rename(ns = fid)
-
 
 ```
 
@@ -260,7 +317,17 @@ country_start_areas <- country_start_areas %>%
 }
 ```
 
-```{r, echo = FALSE, message=FALSE}
+# Downscaling
+
+```{r restriction data, echo = FALSE, message=FALSE}
+
+## Protected areas
+
+```
+
+
+
+```{r, echo = FALSE, message=FALSE, error=FALSE, warning = FALSE}
 
 
 X_long <-  X %>% tibble::rownames_to_column(var="ns") %>%
