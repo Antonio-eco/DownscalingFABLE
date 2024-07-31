@@ -19,7 +19,7 @@ library(downscalr)
 ##Preliminaries
 
 # Set example land use change origin to Cropland
-example_LU_from <- "forest"
+example_LU_from <- "Cropland"
 
 # load data
 data(argentina_df,argentina_luc)

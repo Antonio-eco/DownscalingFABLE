@@ -159,7 +159,7 @@ Xmat <- LandCover.df %>%
 
 ```{r changing land cover structure to create lu_levels, echo = FALSE, message = FALSE}
 
-#land use level per cell per land cover class
+#land use level per cell per land cover class in baseline year
 
 lu_levels <- LandCover.df %>% 
   pivot_longer(-c(id, fid), values_to = "AreaPerCover") %>%
@@ -222,10 +222,11 @@ Yraw <- country_luc
 results_MNL <- data.frame()
 pred_coeff_long <- data.frame()
 country_start_areas <- data.frame()
+X_long <- data.frame()
 
 for(cur_LU.from in c("urban", "cropland", "pasture", "forest", "otherland", "newforest")){
   
- Y <- dplyr::filter(Yraw,lu.from == cur_LU.from & Ts == 2018) %>% #changes 2000 to 2010
+ Y <- dplyr::filter(Yraw,lu.from == cur_LU.from & Ts == 2018) %>% #changes 2018 to 2019
   tidyr::pivot_wider(names_from = lu.to) %>%
   tibble::column_to_rownames(var = "ns") %>%
   dplyr::select(-c(lu.from, Ts))
@@ -260,12 +261,14 @@ country_start_areas <- country_start_areas %>%
 ```
 
 ```{r, echo = FALSE, message=FALSE}
+
+
 X_long <-  X %>% tibble::rownames_to_column(var="ns") %>%
   tidyr::pivot_longer(!ns, names_to="ks", values_to = "value")
 
 ## Downscaling computation and results
 
-results_DS <- downscale(targets = FABLE, 
+results_DS <- downscale(targets = FABLE %>% filter(times > 2020), 
                         start.areas =  country_start_areas, 
                         xmat = X_long, 
                         betas = pred_coeff_long)
