@@ -232,19 +232,19 @@ Xmat <- Xmat_LU %>%
 #land use level per cell per land cover class in baseline year
 
 lu_levels <- LandCover.df %>% 
-  pivot_longer(-c(id, fid), values_to = "AreaPerCover") %>%
+  pivot_longer(-c(id), values_to = "AreaPerCover") %>%
   mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
   mutate(name = stringr::str_remove(name, "X")) %>% 
   #associate the right land cover names
   left_join(map_Copernicus %>%  mutate(code = as.character(code)), by = c("name" = "code"))%>% 
   filter(!(LandCover %in% c("ocean", "water"))) %>% 
-  group_by(fid, LandCover) %>% 
+  group_by(id, LandCover) %>% 
   #Compute the area per cover class per cell (i.e. this is not a share, should it be a share?)
   summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
-  rename(ns = fid,
+  rename(ns = id,
          lu.from = LandCover) %>% 
   dplyr::select(ns, lu.from, value) %>% 
-  rbind(data.frame(ns = unique(LandCover.df$fid),
+  rbind(data.frame(ns = unique(LandCover.df$id),
                    lu.from = "newforest",
                    value = 0)) 
 
