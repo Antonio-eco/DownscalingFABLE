@@ -76,7 +76,7 @@ map_ForestMgmt <- readxl::read_excel(here("Data/mapping_code.xlsx"),
 ext <- extent(Travel)
 res <- 0.5
 raster_layer <- raster(ext, res = res)
-rasterized_layer <- rasterize(Travel, raster_layer, field = "fid")
+rasterized_layer <- rasterize(Travel, raster_layer, field = "id")
 ```
 
 Check in the table below that all land cover of interest and all possible transitions are included in the land transition matrix.
@@ -87,11 +87,13 @@ Check in the table below that all land cover of interest and all possible transi
 
 ```{r changing LandCoverChange data structure , echo = FALSE, message = FALSE}
 country_luc <- LandCoverChange.df %>% 
-  select(fid) %>% 
+  #creating the structure to have land cover change information per id
+  select(id) %>% 
   mutate(temp = 1) %>% 
   full_join(map_HILDA%>%  mutate(code = as.character(code)) %>% mutate(temp = 1), relationship = "many-to-many") %>% 
+  #merge with data on Land Cover Change per code
   left_join(LandCoverChange.df %>% 
-  pivot_longer(-c(id, fid), values_to = "AreaPerCode") %>% 
+  pivot_longer(-c(id), values_to = "AreaPerCode") %>% 
   #associate land cover code with right name
   mutate(name = stringr::str_remove(name, "X")) %>% 
   left_join(map_HILDA %>%  mutate(code = as.character(code)), by = c("name" = "code")),
@@ -100,31 +102,42 @@ country_luc <- LandCoverChange.df %>%
   filter(!(from %in% c("ocean", "water"))) %>% 
   mutate(AreaPerCode = as.numeric(AreaPerCode)) %>% 
   #group by cell
-  group_by(fid) %>% 
+  group_by(id) %>% 
   #compute the total area in that cell
   mutate(TotalArea = sum(AreaPerCode, na.rm = T)) %>% 
   #compute the share of each land cover per cell
   mutate(value = AreaPerCode/TotalArea) %>%
   #set the right variable names to use in DownscalR package
-  group_by(fid, from, to) %>% 
+  group_by(id, from, to) %>% 
   summarise(value = sum(value, na.rm = T)) %>% 
-  rename(ns = fid,
+  rename(ns = id,
          lu.from = from,
          lu.to = to) %>% 
   mutate(Ts = 2018) %>% 
   dplyr::select(ns, lu.from, lu.to, Ts, value) %>% 
   mutate(value = ifelse(is.na(value), 0, value)) %>% 
-  ####if lu.to is forest then it is new forest for FABLE design
-  mutate(lu.to = ifelse(lu.to == "forest", "newforest", lu.to)) %>% 
-  rbind(data.frame(ns = unique(LandCoverChange.df$fid),
-                   lu.from = rep(c("cropland", "newforest", "otherland", "pasture", "urban", "forest"), each = length(unique(LandCoverChange.df$fid))),
+  ####if lu.to is forest but coming from something else than lu.from = forest then it is new forest for FABLE design
+  mutate(lu.to = ifelse(lu.from != "forest" & lu.to == "forest", "newforest", lu.to)) %>% 
+  #add the land transition from any land cover to Forest and set it to zero because impossible in FABLE
+  rbind(data.frame(ns = unique(LandCoverChange.df$id),
+                   lu.from = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), 
+                                 each = length(unique(LandCoverChange.df$id))),
                    lu.to = "forest",
                    Ts = 2018,
                    value = 0)) %>% 
-  mutate(value = ifelse(lu.from == "forest" & lu.to == "forest", 1, value)) %>% 
-  rbind(data.frame(ns = unique(LandCoverChange.df$fid),
+  #add the land transition from newforest to any other (but forest that has been added in previous step)
+  # and set it to zero so that the transition is posible in future even though not in the calibration
+  rbind(data.frame(ns = unique(LandCoverChange.df$id),
                    lu.from = "newforest",
-                   lu.to = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), each = length(unique(LandCoverChange.df$fid))),
+                   lu.to = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), 
+                               each = length(unique(LandCoverChange.df$id))),
+                   Ts = 2018,
+                   value = 0)) %>% 
+  #add land transition from forest to newforest and set it to zero so that the transition is possible in future even though not in the calibration
+  rbind(data.frame(ns = unique(LandCoverChange.df$id),
+                   lu.from = "forest",
+                   lu.to = rep(c("newforest"), 
+                               each = length(unique(LandCoverChange.df$id))),
                    Ts = 2018,
                    value = 0)) 
 
