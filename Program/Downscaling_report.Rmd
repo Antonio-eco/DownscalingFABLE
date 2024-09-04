@@ -167,7 +167,12 @@ Xmat_LU <- LandCover.df %>%
   select(-c(water, ocean)) %>% 
   #compute the share of each land use class within a pixel
   rowwise() %>%
-  mutate(total = sum(c_across(cropland:urban)),
+  
+  mutate(
+    #making sure there is no NaN by setting the denominator to 1
+          total = ifelse(sum(c_across(cropland:urban)) == 0, 
+                            1,
+                            sum(c_across(cropland:urban))),
          across(c(cropland, forest, otherland, pasture, urban),
                 .fns = ~ .x / total, .names = "{.col}_share")) %>%
   ungroup() %>%
