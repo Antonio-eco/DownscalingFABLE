@@ -194,9 +194,13 @@ Xmat_ForestManagement <- ForestManagement.df %>%
   pivot_wider(names_from = "type", values_from = "value") %>%
   #compute the share of each forest management within a pixel, set to 0 if no forest in the pixel
   rowwise() %>%
-  mutate(total = sum(c_across(all_of(setdiff(names(.), "id")))),
-         across(all_of(setdiff(names(.), "id")),
-                .fns = ~ if_else(total == 0, 0, .x / total), .names = "{.col}_share")) %>%
+  mutate(
+    #making sure there is no NaN by setting the denominator to 1
+    total = ifelse(sum(c_across(all_of(setdiff(names(.), "id")))) ==0,
+                   1,
+                   sum(c_across(all_of(setdiff(names(.), "id"))))),
+    across(all_of(setdiff(names(.), "id")),
+           .fns = ~ if_else(total == 0, 0, .x / total), .names = "{.col}_share")) %>%
   ungroup() %>%
   select(-total) %>%
   #add the share of forest in the pixel from LU.df
