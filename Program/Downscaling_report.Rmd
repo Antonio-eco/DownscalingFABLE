@@ -165,37 +165,31 @@ table(country_luc$lu.from, country_luc$lu.to)
 
 ```{r create Xmat matric of explanatory variables, echo = FALSE, message = FALSE}
 #Right now only has land cover data but should contain all the explanatory variables to compute the priors
-Xmat_LU <- LandCover.df %>% 
-  pivot_longer(-c(id_c), values_to = "AreaPerCover") %>%
-  mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
-  mutate(name = stringr::str_remove(name, "X")) %>% 
-  #associate the right land cover names
-  left_join(map_Copernicus %>%  mutate(code = as.character(code)), by = c("name" = "code")) %>% 
-  group_by(id_c, LandCover) %>% 
-  #compute the area per cover class in each cell
-  summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
-  dplyr::select(id_c, LandCover, value) %>% 
-  #pivot wider to add the intercept value
-  pivot_wider(names_from = "LandCover", values_from = "value") %>% 
-  #doesn't exist in copernicus and hilda need to add it
-  #mutate(newforest = 1) %>% 
-#To add for GBR to have a non singulary matrix
-  select(-unknwon) %>% 
-  #remove the water and ocean land cover
-  select(-c(water, ocean)) %>% 
-  #compute the share of each land use class within a pixel
+Xmat_LU <- LandCover.df %>%
+  # Pivot the land cover data to long format
+  pivot_longer(-id_c, values_to = "AreaPerCover") %>%
+  mutate(AreaPerCover = as.numeric(AreaPerCover),
+         name = str_remove(name, "X")) %>%
+  # Join with map_Copernicus to get LandCover names
+  left_join(map_Copernicus %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
+  # Summarize total area per land cover class
+  group_by(id_c, LandCover) %>%
+  summarise(value = sum(AreaPerCover, na.rm = TRUE), .groups = 'drop') %>%
+  # Pivot wider to spread land cover types into columns
+  pivot_wider(names_from = "LandCover", values_from = "value", values_fill = 0) %>%
+  # Remove unwanted land cover types
+  select(-c(unknwon, water, ocean)) %>%
+  # Compute the share of each land use class
   rowwise() %>%
   mutate(
-    #making sure there is no NaN by setting the denominator to 1
-          total = ifelse(sum(c_across(cropland:urban)) == 0, 
-                            1,
-                            sum(c_across(cropland:urban))),
-         across(c(cropland, forest, otherland, pasture, urban),
-                .fns = ~ .x / total, .names = "{.col}_share")) %>%
+    # Calculate total area of selected land cover classes, avoid NaN by setting total to 1 if sum is 0
+    total = ifelse(sum(c_across(cropland:urban), na.rm = TRUE) == 0, 1, sum(c_across(cropland:urban), na.rm = TRUE)),
+    # Compute shares for each land cover class
+    across(c(cropland, forest, otherland, pasture, urban), ~ .x / total, .names = "{.col}_share")
+  ) %>%
   ungroup() %>%
+  # Remove the total column
   select(-total)
-# use summary to check if there are NAs in the Xmat
-#summary(Xmat_LU)
 
 #ForestManagement
 Xmat_ForestManagement <- ForestManagement.df %>%
