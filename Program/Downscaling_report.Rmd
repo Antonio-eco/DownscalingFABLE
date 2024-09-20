@@ -436,63 +436,79 @@ dev.off()
 ```{r, echo = FALSE, message = FALSE}
 
 results_DS_LUC <- results_DS
-results_DS_LUC$out.res <- rbind(
-  results_DS_LUC$out.res %>% 
-  filter(lu.from != lu.to) %>% 
-    arrange(lu.to, ns, times) %>% 
-    group_by(lu.to, ns, times)%>% 
-    summarise(value = sum(value, na.rm = T)) %>% 
-    mutate(Type = "gain") %>% 
-    rename(lu = lu.to),
-  results_DS_LUC$out.res %>% 
-  filter(lu.from != lu.to) %>% 
-    arrange(lu.from, ns, times) %>% 
-    group_by(lu.from, ns, times)%>% 
-    summarise(value = -sum(value, na.rm = T)) %>% 
-    mutate(Type = "loss") %>%
-    rename(lu = lu.from)) %>% 
-  group_by(lu, times, ns) %>% 
-  #get net change from lu cat, for a cell for a year
-  summarise(value = sum(value, na.rm = T)) %>% 
-  rename(lu.to = lu)
-  
 
+# Create 'gain' and 'loss' datasets
+results_DS_LUC$out.res <- results_DS_LUC$out.res %>%
+  filter(lu.from != lu.to) %>%
+  # Group by `lu.to`, `ns`, and `times` for gains
+  group_by(lu.to, ns, times) %>%
+  summarise(gain = sum(value, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Type = "gain", lu = lu.to) %>%
+  
+  # Bind the losses dataset by grouping by `lu.from`
+  bind_rows(
+    results_DS_LUC$out.res %>%
+      filter(lu.from != lu.to) %>%
+      group_by(lu.from, ns, times) %>%
+      summarise(loss = -sum(value, na.rm = TRUE), .groups = "drop") %>%
+      mutate(Type = "loss", lu = lu.from)
+  ) %>%
+  
+  # Summarize the final dataset grouping by land-use (`lu`), time, and pixel (`ns`)
+  group_by(lu, times, ns) %>%
+  summarise(value = sum(gain, loss, na.rm = TRUE), .groups = "drop") %>%
+  rename(lu.to = lu)
+
+#Define plot aesthetics
 color = "PRGn"
 label = "Area gains and losses in ha per pixel"
-Transition_plot <- LUC_plot(results_DS_LUC, rasterized_layer, 
-                            color = "PRGn",
-                            label = "Area gains and losses in ha per pixel")
 
+#Create the transition plot using LUC_plot
+Transition_plot <- LUC_plot(
+  results_DS_LUC, rasterized_layer, 
+  color = color,
+  label = label
+)
+
+Define the limit for color scaling
 limit <- max(abs(Transition_plot[["plot.df"]]$value)) * c(-1, 1)
+
+# Step 5: Create the plot with updated scale and theme adjustments
 Transition_plot$LUC.plot + 
-  ggplot2::scale_fill_gradient2()+
+  ggplot2::scale_fill_gradient2() +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"))
 
-tiff(here("Output", country, paste0(format(Sys.Date(),format = "%y%m%d"), "_", pathway , "_","Land-use-change-map.tiff")), units = "in", height = 6, width = 10, res = 300)
+#Save the plot to a .tiff file
+tiff(
+  here("Output", country, paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "Land-use-change-map.tiff")),
+  units = "in", height = 6, width = 10, res = 300
+)
 plot(Transition_plot$LUC.plot + 
-  ggplot2::scale_fill_gradient2()+
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm")))
+  ggplot2::scale_fill_gradient2() +
+  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"))
+)
 dev.off()
+
 
 
 ```
 
 ```{r 2020 map, echo = FALSE, message = FALSE}
 
-#targets_2050 <- dplyr::filter(FABLE, times == 2050)
-
 results_DS_2050 <- results_DS
-results_DS_2050$out.res <- results_DS_2050$out.res %>% dplyr::filter(times %in% c(2015, 2050))
+results_DS_2050$out.res <- results_DS_2050$out.res %>% 
+  dplyr::filter(times %in% c(2015, 2050))
 
+# Create the land-use change plot for 2050
 LUC_plot_2050 <- LUC_plot(results_DS_2050, rasterized_layer)
-LUC_plot_2050$LUC.plot +
+plot_to_save <- LUC_plot_2050$LUC.plot +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm"))
+plot_to_save
 
-tiff(here("Output", country, paste0(format(Sys.Date(),format = "%y%m%d"), "_", pathway , "_", "2050_Land-use-map.tiff")), units = "in", height = 6, width = 10, res = 300)
-plot(LUC_plot_2050$LUC.plot +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm")))
-dev.off()
+# Save the plot as a TIFF file
+output_file <- here("Output", country, paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "2050_Land-use-map.tiff"))
 
+ggplot2::ggsave(filename = output_file, plot = plot_to_save, units = "in", height = 6, width = 10, dpi = 300)
 
 ```
 
