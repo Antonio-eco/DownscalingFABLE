@@ -21,12 +21,14 @@ library(tidyr)
 library(downscalr)
 ```
 
+
 ```{r temporary settings, include = FALSE}
-country = "GBR"
+#Please ensure that you have a folder named like the country variable you will input below in your "Output" folder. This is where your maps will be saved.
+
+country = "IND"
 pathway = "CurrentTrends"
 # pathway = "NationalCommitments"
 # pathway = "GlobalSustainability"
-
 
 ```
 
@@ -41,23 +43,29 @@ This report is generated for **`r country`** for the pathway **`r pathway`**.
 #geospatial data
 
 population <- geojson_read(here("Data", country, "Population2020.geojson"),  what = "sp")
-population.df <- population@data #%>% 
+population.df <- population@data %>% 
+  select(-id) #%>% 
   #mutate(TotalPop = c(scale(TotalPop, scale = T)))
 
 ProtectedAreas <- geojson_read(here("Data", country, "ProtectedAreas.geojson"),  what = "sp")
-ProtectedAreas.df <- ProtectedAreas@data 
+ProtectedAreas.df <- ProtectedAreas@data %>% 
+  select(-id)
 
 Travel <- geojson_read(here("Data", country, "TravelTime.geojson"),  what = "sp")
-Travel.df <- Travel@data
+Travel.df <- Travel@data %>% 
+  select(-id)
 
 LandCover <- geojson_read(here("Data", country, "LandCoverCopernicus2019.geojson"),  what = "sp")
-LandCover.df <- LandCover@data
+LandCover.df <- LandCover@data %>% 
+  select(-id)
 
 LandCoverChange <- geojson_read(here("Data", country, "LandCoverChangeHILDA2018_2019.geojson"),  what = "sp")
-LandCoverChange.df <- LandCoverChange@data
+LandCoverChange.df <- LandCoverChange@data %>% 
+   select(-id)
 
 ForestManagement <- geojson_read(here("Data", country, "ForestManagement.geojson"),  what = "sp")
-ForestManagement.df <- ForestManagement@data
+ForestManagement.df <- ForestManagement@data %>% 
+  select(-id)
 
 #mapping
 
@@ -88,12 +96,12 @@ Check in the table below that all land cover of interest and all possible transi
 ```{r changing LandCoverChange data structure , echo = FALSE, message = FALSE}
 country_luc <- LandCoverChange.df %>% 
   #creating the structure to have land cover change information per id
-  select(id) %>% 
+  select(id_c) %>% 
   mutate(temp = 1) %>% 
   full_join(map_HILDA%>%  mutate(code = as.character(code)) %>% mutate(temp = 1), relationship = "many-to-many") %>% 
   #merge with data on Land Cover Change per code
   left_join(LandCoverChange.df %>% 
-  pivot_longer(-c(id), values_to = "AreaPerCode") %>% 
+  pivot_longer(-c(id_c), values_to = "AreaPerCode") %>% 
   #associate land cover code with right name
   mutate(name = stringr::str_remove(name, "X")) %>% 
   left_join(map_HILDA %>%  mutate(code = as.character(code)), by = c("name" = "code")),
@@ -102,15 +110,15 @@ country_luc <- LandCoverChange.df %>%
   filter(!(from %in% c("ocean", "water"))) %>% 
   mutate(AreaPerCode = as.numeric(AreaPerCode)) %>% 
   #group by cell
-  group_by(id) %>% 
+  group_by(id_c) %>% 
   #compute the total area in that cell
   mutate(TotalArea = sum(AreaPerCode, na.rm = T)) %>% 
   #compute the share of each land cover per cell
   mutate(value = AreaPerCode/TotalArea) %>%
   #set the right variable names to use in DownscalR package
-  group_by(id, from, to) %>% 
+  group_by(id_c, from, to) %>% 
   summarise(value = sum(value, na.rm = T)) %>% 
-  rename(ns = id,
+  rename(ns = id_c,
          lu.from = from,
          lu.to = to) %>% 
   mutate(Ts = 2018) %>% 
@@ -119,25 +127,25 @@ country_luc <- LandCoverChange.df %>%
   ####if lu.to is forest but coming from something else than lu.from = forest then it is new forest for FABLE design
   mutate(lu.to = ifelse(lu.from != "forest" & lu.to == "forest", "newforest", lu.to)) %>% 
   #add the land transition from any land cover to Forest and set it to zero because impossible in FABLE
-  rbind(data.frame(ns = unique(LandCoverChange.df$id),
+  rbind(data.frame(ns = unique(LandCoverChange.df$id_c),
                    lu.from = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), 
-                                 each = length(unique(LandCoverChange.df$id))),
+                                 each = length(unique(LandCoverChange.df$id_c))),
                    lu.to = "forest",
                    Ts = 2018,
                    value = 0)) %>% 
   #add the land transition from newforest to any other (but forest that has been added in previous step)
   # and set it to zero so that the transition is posible in future even though not in the calibration
-  rbind(data.frame(ns = unique(LandCoverChange.df$id),
+  rbind(data.frame(ns = unique(LandCoverChange.df$id_c),
                    lu.from = "newforest",
                    lu.to = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), 
-                               each = length(unique(LandCoverChange.df$id))),
+                               each = length(unique(LandCoverChange.df$id_c))),
                    Ts = 2018,
                    value = 0)) %>% 
   #add land transition from forest to newforest and set it to zero so that the transition is possible in future even though not in the calibration
-  rbind(data.frame(ns = unique(LandCoverChange.df$id),
+  rbind(data.frame(ns = unique(LandCoverChange.df$id_c),
                    lu.from = "forest",
                    lu.to = rep(c("newforest"), 
-                               each = length(unique(LandCoverChange.df$id))),
+                               each = length(unique(LandCoverChange.df$id_c))),
                    Ts = 2018,
                    value = 0)) 
 
@@ -148,15 +156,15 @@ table(country_luc$lu.from, country_luc$lu.to)
 ```{r create Xmat matric of explanatory variables, echo = FALSE, message = FALSE}
 #Right now only has land cover data but should contain all the explanatory variables to compute the priors
 Xmat_LU <- LandCover.df %>% 
-  pivot_longer(-c(id), values_to = "AreaPerCover") %>%
+  pivot_longer(-c(id_c), values_to = "AreaPerCover") %>%
   mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
   mutate(name = stringr::str_remove(name, "X")) %>% 
   #associate the right land cover names
   left_join(map_Copernicus %>%  mutate(code = as.character(code)), by = c("name" = "code")) %>% 
-  group_by(id, LandCover) %>% 
+  group_by(id_c, LandCover) %>% 
   #compute the area per cover class in each cell
   summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
-  dplyr::select(id, LandCover, value) %>% 
+  dplyr::select(id_c, LandCover, value) %>% 
   #pivot wider to add the intercept value
   pivot_wider(names_from = "LandCover", values_from = "value") %>% 
   #doesn't exist in copernicus and hilda need to add it
@@ -167,7 +175,6 @@ Xmat_LU <- LandCover.df %>%
   select(-c(water, ocean)) %>% 
   #compute the share of each land use class within a pixel
   rowwise() %>%
-  
   mutate(
     #making sure there is no NaN by setting the denominator to 1
           total = ifelse(sum(c_across(cropland:urban)) == 0, 
@@ -177,47 +184,49 @@ Xmat_LU <- LandCover.df %>%
                 .fns = ~ .x / total, .names = "{.col}_share")) %>%
   ungroup() %>%
   select(-total)
+# use summary to check if there are NAs in the Xmat
 #summary(Xmat_LU)
 
 #ForestManagement
 Xmat_ForestManagement <- ForestManagement.df %>% 
-  pivot_longer(-c(id), values_to = "AreaPerCover") %>%
+  pivot_longer(-c(id_c), values_to = "AreaPerCover") %>%
   mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
   mutate(name = stringr::str_remove(name, "X")) %>% 
   #associate the right land cover names
   left_join(map_ForestMgmt %>%  mutate(code = as.character(code)), by = c("name" = "code")) %>% 
-  group_by(id, type) %>% 
+  group_by(id_c, type) %>% 
   #compute the area per cover class in each cell
   summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
-  dplyr::select(id, type, value) %>% 
+  dplyr::select(id_c, type, value) %>% 
   #pivot wider to add the intercept value
   pivot_wider(names_from = "type", values_from = "value") %>%
   #compute the share of each forest management within a pixel, set to 0 if no forest in the pixel
   rowwise() %>%
   mutate(
     #making sure there is no NaN by setting the denominator to 1
-    total = ifelse(sum(c_across(all_of(setdiff(names(.), "id")))) ==0,
+    total = ifelse(sum(c_across(all_of(setdiff(names(.), "id_c")))) ==0,
                    1,
-                   sum(c_across(all_of(setdiff(names(.), "id"))))),
-    across(all_of(setdiff(names(.), "id")),
+                   sum(c_across(all_of(setdiff(names(.), "id_c"))))),
+    across(all_of(setdiff(names(.), "id_c")),
            .fns = ~ if_else(total == 0, 0, .x / total), .names = "{.col}_share")) %>%
   ungroup() %>%
   select(-total) %>%
   #add the share of forest in the pixel from LU.df
-  left_join(Xmat_LU %>% select(id, forest_share)) %>% 
+  left_join(Xmat_LU %>% select(id_c, forest_share)) %>% 
   #compute the share of forest under specific forest management practice in each pixel
   mutate(across(contains("share"), ~ .x * forest_share)) %>% 
   select(-forest_share) %>% 
-  select(c(id, contains("share")))
+  select(c(id_c, contains("share")))
+#summary(Xmat_ForestManagement)
 
 #Mean Travel time
-Xmat_Travel <- Travel.df %>% select(id, MeanTravelTime) %>% 
+Xmat_Travel <- Travel.df %>% select(id_c, MeanTravelTime) %>% 
   mutate(log_MeanTravelTime = log(MeanTravelTime)) %>% 
   select(-MeanTravelTime)
 #summary(Xmat_Travel)
 
 #Population  
-Xmat_pop <- population.df %>% select(id, TotalPop) %>% 
+Xmat_pop <- population.df %>% select(id_c, TotalPop) %>% 
   mutate(log_pop = log(TotalPop)) %>% 
   select(-TotalPop)
 #summary(Xmat_pop)  
@@ -231,8 +240,8 @@ Xmat <- Xmat_LU %>%
   left_join(Xmat_ForestManagement) %>% 
   select(-c(cropland, otherland, urban, pasture, forest)) %>% #, SRP_share)) %>% 
   #pivot back longer to fit the DownscalR package structure
-  pivot_longer(-id, values_to = "value", names_to = "ks") %>% 
-  rename(ns = id)
+  pivot_longer(-id_c, values_to = "value", names_to = "ks") %>% 
+  rename(ns = id_c)
 
 ```
 
@@ -241,26 +250,32 @@ Xmat <- Xmat_LU %>%
 #land use level per cell per land cover class in baseline year
 
 lu_levels <- LandCover.df %>% 
-  pivot_longer(-c(id), values_to = "AreaPerCover") %>%
+  pivot_longer(-c(id_c), values_to = "AreaPerCover") %>%
   mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
   mutate(name = stringr::str_remove(name, "X")) %>% 
   #associate the right land cover names
   left_join(map_Copernicus %>%  mutate(code = as.character(code)), by = c("name" = "code"))%>% 
   filter(!(LandCover %in% c("ocean", "water"))) %>% 
-  group_by(id, LandCover) %>% 
+  group_by(id_c, LandCover) %>% 
   #Compute the area per cover class per cell (i.e. this is not a share, should it be a share?)
   summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
-  rename(ns = id,
+  rename(ns = id_c,
          lu.from = LandCover) %>% 
   dplyr::select(ns, lu.from, value) %>% 
-  rbind(data.frame(ns = unique(LandCover.df$id),
+  rbind(data.frame(ns = unique(LandCover.df$id_c),
                    lu.from = "newforest",
                    value = 0)) 
 
 ```
 
 ```{r create df used for priors relative to the country, echo = FALSE, message=FALSE}
-country_df <- list(xmat = tibble(Xmat), lu_levels = tibble(lu_levels))
+
+rm_na <- Xmat$ns[which(is.na(Xmat), arr.ind = T)[,1]]
+
+country_df <- list(xmat = tibble(Xmat %>% 
+                                   filter(!(ns %in% rm_na))), 
+                   lu_levels = tibble(lu_levels %>% 
+                                        filter(!(ns %in% rm_na))))
 ```
 
 # Checking FABLE land use change projections to downscale
@@ -296,12 +311,14 @@ table(FABLE$lu.from, FABLE$lu.to)
 # Estimate MNL model
 
 ```{r prep data, echo = FALSE, message=FALSE, include = FALSE}
-Yraw <- country_luc 
 
 results_MNL <- data.frame()
 pred_coeff_long <- data.frame()
 country_start_areas <- data.frame()
 X_long <- data.frame()
+
+Yraw <- country_luc %>% 
+  filter(!(ns %in% rm_na))
 
 for(cur_LU.from in c("urban", "cropland", "pasture", "forest", "otherland", "newforest")){
   
@@ -373,7 +390,7 @@ LUC_plot <- LUC_plot(results_DS, rasterized_layer)
 LUC_plot$LUC.plot +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"))
 
-tiff(here("Output", country, paste0(gsub("-", "",Sys.Date()), "_", pathway , "_", "Land-use-map.tiff")), units = "in", height = 6, width = 10, res = 300)
+tiff(here("Output", country, paste0(format(Sys.Date(),format = "%y%m%d"), "_", pathway , "_", "Land-use-map.tiff")), units = "in", height = 6, width = 10, res = 300)
 plot(LUC_plot$LUC.plot +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm")))
 dev.off()
@@ -419,7 +436,7 @@ Transition_plot$LUC.plot +
   ggplot2::scale_fill_gradient2()+
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"))
 
-tiff(here("Output", country, paste0(gsub("-", "",Sys.Date()), "_", pathway , "_","Land-use-change-map.tiff")), units = "in", height = 6, width = 10, res = 300)
+tiff(here("Output", country, paste0(format(Sys.Date(),format = "%y%m%d"), "_", pathway , "_","Land-use-change-map.tiff")), units = "in", height = 6, width = 10, res = 300)
 plot(Transition_plot$LUC.plot + 
   ggplot2::scale_fill_gradient2()+
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm")))
@@ -464,7 +481,7 @@ LUC_plot_2050 <- LUC_plot(results_DS_2050, rasterized_layer)
 LUC_plot_2050$LUC.plot +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm"))
 
-tiff(here("Output", country, paste0(gsub("-", "",Sys.Date()), "_", pathway , "_", "2050_Land-use-map.tiff")), units = "in", height = 6, width = 10, res = 300)
+tiff(here("Output", country, paste0(format(Sys.Date(),format = "%y%m%d"), "_", pathway , "_", "2050_Land-use-map.tiff")), units = "in", height = 6, width = 10, res = 300)
 plot(LUC_plot_2050$LUC.plot +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm")))
 dev.off()
