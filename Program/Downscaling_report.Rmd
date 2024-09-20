@@ -282,22 +282,21 @@ Xmat <- Xmat_LU %>%
 
 #land use level per cell per land cover class in baseline year
 
-lu_levels <- LandCover.df %>% 
-  pivot_longer(-c(id_c), values_to = "AreaPerCover") %>%
-  mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
-  mutate(name = stringr::str_remove(name, "X")) %>% 
-  #associate the right land cover names
-  left_join(map_Copernicus %>%  mutate(code = as.character(code)), by = c("name" = "code"))%>% 
-  filter(!(LandCover %in% c("ocean", "water"))) %>% 
-  group_by(id_c, LandCover) %>% 
-  #Compute the area per cover class per cell (i.e. this is not a share, should it be a share?)
-  summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
-  rename(ns = id_c,
-         lu.from = LandCover) %>% 
-  dplyr::select(ns, lu.from, value) %>% 
-  rbind(data.frame(ns = unique(LandCover.df$id_c),
-                   lu.from = "newforest",
-                   value = 0)) 
+lu_levels <- LandCover.df %>%
+  # Pivot to long format and convert AreaPerCover to numeric
+  pivot_longer(-id_c, values_to = "AreaPerCover") %>%
+  mutate(AreaPerCover = as.numeric(AreaPerCover),
+         name = str_remove(name, "X")) %>%
+  # Join with map_Copernicus and filter out "ocean" and "water"
+  left_join(map_Copernicus %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
+  filter(!LandCover %in% c("ocean", "water")) %>%
+  # Group by id_c and LandCover, summarizing the total area per cover class
+  group_by(id_c, LandCover) %>%
+  summarise(value = sum(AreaPerCover, na.rm = TRUE), .groups = 'drop') %>%
+  # Rename columns for clarity
+  rename(ns = id_c, lu.from = LandCover) %>%
+  # Add rows for "newforest" with value = 0 for each unique id_c
+  bind_rows(data.frame(ns = unique(LandCover.df$id_c), lu.from = "newforest", value = 0))
 
 ```
 
@@ -322,20 +321,22 @@ Check in the table below that in the land use changes projected in your calculat
 -   The diagonal should be filled with zeros.
 
 ```{r FABLE data prep, echo = FALSE, message = FALSE}
-FABLE <- readxl::read_excel(here("Data", country, "FABLE.xlsx"),
-                            sheet = pathway) %>% #In calculator, sheet 4_calc_land, 
+
+FABLE <- readxl::read_excel(here("Data", country, "FABLE.xlsx"), sheet = pathway) %>%
+  #In calculator, sheet 4_calc_land, 
   #table calc_landmatrix, columns LandCoverInit	YearStart	YearEnd	ToForest	ToOtherLand	ToCropland	ToPasture	ToUrban	ToNewForest
-  dplyr::select(-YearStart) %>% 
-  pivot_longer(-c(YearEnd, LandCoverInit), 
-               values_to = "value", 
-               names_to = "lu.to") %>% 
-  mutate(lu.to = stringr::str_remove(lu.to, "To")) %>% 
-  mutate(lu.from = tolower(LandCoverInit),
-         lu.to = tolower(lu.to),
-         times = YearEnd) %>% 
-  dplyr::select(times, lu.from, lu.to, value) %>% 
-  #do not keep land cover that remains the same
-  filter(!(lu.from == lu.to))
+  # Remove YearStart and reshape to long format
+  select(-YearStart) %>%
+  pivot_longer(-c(YearEnd, LandCoverInit), values_to = "value", names_to = "lu.to") %>%
+  # Clean and adjust land cover names
+  mutate(
+    lu.from = tolower(LandCoverInit),
+    lu.to = tolower(str_remove(lu.to, "To")),
+    times = YearEnd
+  ) %>%
+  # Select necessary columns and filter out unchanged land covers
+  select(times, lu.from, lu.to, value) %>%
+  filter(lu.from != lu.to)
   
 
 table(FABLE$lu.from, FABLE$lu.to)
