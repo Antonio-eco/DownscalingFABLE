@@ -104,60 +104,62 @@ Check in the table below that all land cover of interest and all possible transi
 -   The matrix should be filled with the same number in each cell (i.e. the number of pixels for your country's grid representation in 50km x 50km)
 
 ```{r changing LandCoverChange data structure , echo = FALSE, message = FALSE}
-country_luc <- LandCoverChange.df %>% 
-  #creating the structure to have land cover change information per id
-  select(id_c) %>% 
-  mutate(temp = 1) %>% 
-  full_join(map_HILDA%>%  mutate(code = as.character(code)) %>% mutate(temp = 1), relationship = "many-to-many") %>% 
-  #merge with data on Land Cover Change per code
-  left_join(LandCoverChange.df %>% 
+
+country_luc <- LandCoverChange.df %>%
   pivot_longer(-c(id_c), values_to = "AreaPerCode") %>% 
-  #associate land cover code with right name
-  mutate(name = stringr::str_remove(name, "X")) %>% 
-  left_join(map_HILDA %>%  mutate(code = as.character(code)), by = c("name" = "code")),
-  relationship = "many-to-many") %>%
-  #remove ocean and water
+  # Remove the "X" from names
+  mutate(name = stringr::str_remove(name, "X"),
+         AreaPerCode = as.numeric(AreaPerCode)) %>%
+  # Convert 'code' in map_HILDA to character to match 'name'
+  left_join(map_HILDA %>% 
+              select(code, from, to) %>% 
+              mutate(code = as.character(code)),  # Convert code to character
+            by = c("name" = "code")) %>% 
+  # Remove ocean and water in one step
   filter(!(from %in% c("ocean", "water"))) %>% 
-  mutate(AreaPerCode = as.numeric(AreaPerCode)) %>% 
-  #group by cell
   group_by(id_c) %>% 
-  #compute the total area in that cell
-  mutate(TotalArea = sum(AreaPerCode, na.rm = T)) %>% 
-  #compute the share of each land cover per cell
-  mutate(value = AreaPerCode/TotalArea) %>%
-  #set the right variable names to use in DownscalR package
+  # Compute total area per cell and land cover share
+  mutate(TotalArea = sum(AreaPerCode, na.rm = TRUE),
+         value = AreaPerCode / TotalArea) %>% 
+  # Group by id_c, from, to and summarize the values
   group_by(id_c, from, to) %>% 
-  summarise(value = sum(value, na.rm = T)) %>% 
-  rename(ns = id_c,
-         lu.from = from,
-         lu.to = to) %>% 
-  mutate(Ts = 2018) %>% 
-  dplyr::select(ns, lu.from, lu.to, Ts, value) %>% 
-  mutate(value = ifelse(is.na(value), 0, value)) %>% 
-  ####if lu.to is forest but coming from something else than lu.from = forest then it is new forest for FABLE design
-  mutate(lu.to = ifelse(lu.from != "forest" & lu.to == "forest", "newforest", lu.to)) %>% 
-  #add the land transition from any land cover to Forest and set it to zero because impossible in FABLE
-  rbind(data.frame(ns = unique(LandCoverChange.df$id_c),
-                   lu.from = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), 
-                                 each = length(unique(LandCoverChange.df$id_c))),
-                   lu.to = "forest",
-                   Ts = 2018,
-                   value = 0)) %>% 
-  #add the land transition from newforest to any other (but forest that has been added in previous step)
-  # and set it to zero so that the transition is posible in future even though not in the calibration
-  rbind(data.frame(ns = unique(LandCoverChange.df$id_c),
-                   lu.from = "newforest",
-                   lu.to = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), 
-                               each = length(unique(LandCoverChange.df$id_c))),
-                   Ts = 2018,
-                   value = 0)) %>% 
-  #add land transition from forest to newforest and set it to zero so that the transition is possible in future even though not in the calibration
-  rbind(data.frame(ns = unique(LandCoverChange.df$id_c),
-                   lu.from = "forest",
-                   lu.to = rep(c("newforest"), 
-                               each = length(unique(LandCoverChange.df$id_c))),
-                   Ts = 2018,
-                   value = 0)) 
+  summarise(value = sum(value, na.rm = TRUE), .groups = "drop") %>%
+  rename(ns = id_c, lu.from = from, lu.to = to) %>% 
+  # Fill missing values with 0
+  mutate(Ts = 2018, 
+         value = replace_na(value, 0)) %>% 
+  # Set transitions to "newforest" if applicable
+  mutate(lu.to = ifelse(lu.from != "forest" & lu.to == "forest", "newforest", lu.to))
+
+# Prepare rows for impossible transitions for FABLE design
+forest_transitions <- expand.grid(
+  ns = unique(LandCoverChange.df$id_c),
+  lu.from = c("cropland", "newforest", "otherland", "pasture", "urban"),
+  lu.to = "forest",
+  Ts = 2018,
+  value = 0
+)
+
+newforest_transitions <- expand.grid(
+  ns = unique(LandCoverChange.df$id_c),
+  lu.from = "newforest",
+  lu.to = c("cropland", "otherland", "pasture", "urban"),
+  Ts = 2018,
+  value = 0
+)
+
+forest_to_newforest <- data.frame(
+  ns = unique(LandCoverChange.df$id_c),
+  lu.from = "forest",
+  lu.to = "newforest",
+  Ts = 2018,
+  value = 0
+)
+
+# Combine all transitions into the main dataset
+country_luc <- country_luc %>%
+  bind_rows(forest_transitions, newforest_transitions, forest_to_newforest)
+
 
 table(country_luc$lu.from, country_luc$lu.to)
   
@@ -323,8 +325,9 @@ Check in the table below that in the land use changes projected in your calculat
 ```{r FABLE data prep, echo = FALSE, message = FALSE}
 
 FABLE <- readxl::read_excel(here("Data", country, "FABLE.xlsx"), sheet = pathway) %>%
-  #In calculator, sheet 4_calc_land, 
-  #table calc_landmatrix, columns LandCoverInit	YearStart	YearEnd	ToForest	ToOtherLand	ToCropland	ToPasture	ToUrban	ToNewForest
+  # In calculator, sheet 4_calc_land, 
+  # table calc_landmatrix, columns LandCoverInit	YearStart	YearEnd	ToForest	ToOtherLand	ToCropland	ToPasture	ToUrban	ToNewForest
+  
   # Remove YearStart and reshape to long format
   select(-YearStart) %>%
   pivot_longer(-c(YearEnd, LandCoverInit), values_to = "value", names_to = "lu.to") %>%
@@ -421,13 +424,15 @@ downscaled_LUC <- results_DS$out.res
 
 ```{r, echo = FALSE, message=FALSE}
 LUC_plot <- LUC_plot(results_DS, rasterized_layer)
-LUC_plot$LUC.plot +
+plot_to_save <- LUC_plot$LUC.plot +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"))
+plot_to_save
 
-tiff(here("Output", country, paste0(format(Sys.Date(),format = "%y%m%d"), "_", pathway , "_", "Land-use-map.tiff")), units = "in", height = 6, width = 10, res = 300)
-plot(LUC_plot$LUC.plot +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm")))
-dev.off()
+# Save the plot as a TIFF file
+output_file <- here("Output", country, paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "Land-use-map.tiff"))
+
+ggplot2::ggsave(filename = output_file, plot = plot_to_save, units = "in", height = 6, width = 10, dpi = 300)
+rm(plot_to_save)
 
 ```
 
@@ -470,7 +475,7 @@ Transition_plot <- LUC_plot(
   label = label
 )
 
-Define the limit for color scaling
+#Define the limit for color scaling
 limit <- max(abs(Transition_plot[["plot.df"]]$value)) * c(-1, 1)
 
 # Step 5: Create the plot with updated scale and theme adjustments
@@ -509,6 +514,6 @@ plot_to_save
 output_file <- here("Output", country, paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "2050_Land-use-map.tiff"))
 
 ggplot2::ggsave(filename = output_file, plot = plot_to_save, units = "in", height = 6, width = 10, dpi = 300)
-
+rm(plot_to_save)
 ```
 
