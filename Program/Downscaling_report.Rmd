@@ -19,6 +19,7 @@ library(raster)
 library(dplyr)
 library(tidyr)
 library(downscalr)
+library(stringr)
 ```
 
 
@@ -66,6 +67,15 @@ LandCoverChange.df <- LandCoverChange@data %>%
 ForestManagement <- geojson_read(here("Data", country, "ForestManagement.geojson"),  what = "sp")
 ForestManagement.df <- ForestManagement@data %>% 
   select(-id)
+
+altitude <- geojson_read(here("Data", country, "Altitude.geojson"),  what = "sp")
+altitude.df <- altitude@data %>% 
+  select(-id)
+
+slope <- geojson_read(here("Data", country, "Slope.geojson"),  what = "sp")
+slope.df <- slope@data %>% 
+  select(-id)
+  
 
 #mapping
 
@@ -188,36 +198,33 @@ Xmat_LU <- LandCover.df %>%
 #summary(Xmat_LU)
 
 #ForestManagement
-Xmat_ForestManagement <- ForestManagement.df %>% 
-  pivot_longer(-c(id_c), values_to = "AreaPerCover") %>%
-  mutate(AreaPerCover = as.numeric(AreaPerCover))  %>% 
-  mutate(name = stringr::str_remove(name, "X")) %>% 
-  #associate the right land cover names
-  left_join(map_ForestMgmt %>%  mutate(code = as.character(code)), by = c("name" = "code")) %>% 
-  group_by(id_c, type) %>% 
-  #compute the area per cover class in each cell
-  summarise(value = sum(AreaPerCover, na.rm = T)) %>% 
-  dplyr::select(id_c, type, value) %>% 
-  #pivot wider to add the intercept value
-  pivot_wider(names_from = "type", values_from = "value") %>%
-  #compute the share of each forest management within a pixel, set to 0 if no forest in the pixel
+Xmat_ForestManagement <- ForestManagement.df %>%
+  # Pivot longer to convert cover columns to rows
+  pivot_longer(-id_c, values_to = "AreaPerCover") %>%
+  mutate(AreaPerCover = as.numeric(AreaPerCover),
+         name = str_remove(name, "X")) %>%
+  # Join with map_ForestMgmt to get the corresponding forest management types
+  left_join(map_ForestMgmt %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
+  # Group by id_c and type to summarize total area per cover class per pixel
+  group_by(id_c, type) %>%
+  summarise(value = sum(AreaPerCover, na.rm = TRUE), .groups = 'drop') %>%
+  # Pivot wider to create columns for each forest management type
+  pivot_wider(names_from = type, values_from = value, values_fill = 0) %>%
+  # Add total and compute forest management shares
   rowwise() %>%
-  mutate(
-    #making sure there is no NaN by setting the denominator to 1
-    total = ifelse(sum(c_across(all_of(setdiff(names(.), "id_c")))) ==0,
-                   1,
-                   sum(c_across(all_of(setdiff(names(.), "id_c"))))),
-    across(all_of(setdiff(names(.), "id_c")),
-           .fns = ~ if_else(total == 0, 0, .x / total), .names = "{.col}_share")) %>%
+  mutate(total = sum(c_across(-id_c), na.rm = TRUE),
+         total = ifelse(total == 0, 1, total),
+         across(-c(id_c, total), ~ .x / total, .names = "{.col}_share")) %>%
   ungroup() %>%
   select(-total) %>%
-  #add the share of forest in the pixel from LU.df
-  left_join(Xmat_LU %>% select(id_c, forest_share)) %>% 
-  #compute the share of forest under specific forest management practice in each pixel
-  mutate(across(contains("share"), ~ .x * forest_share)) %>% 
-  select(-forest_share) %>% 
-  select(c(id_c, contains("share")))
-#summary(Xmat_ForestManagement)
+  # Join with Xmat_LU to add the forest share
+  left_join(Xmat_LU %>% select(id_c, forest_share), by = "id_c") %>%
+  # Multiply all share columns by forest_share
+  mutate(across(contains("_share"), ~ .x * forest_share)) %>%
+  # Clean up the result, dropping intermediate columns
+  select(id_c, contains("_share"))
+
+
 
 #Mean Travel time
 Xmat_Travel <- Travel.df %>% select(id_c, MeanTravelTime) %>% 
@@ -231,6 +238,36 @@ Xmat_pop <- population.df %>% select(id_c, TotalPop) %>%
   select(-TotalPop)
 #summary(Xmat_pop)  
   
+#Altitude  
+Xmat_alt <- altitude.df %>% select(id_c, MeanAltitude) %>% 
+  mutate(log_altitude = log(MeanAltitude)) %>% 
+  select(-MeanAltitude)
+
+#Slope and data from GAEZ on zone and thermal 
+Xmat_slope <- slope.df %>%
+  select(id_c, MeanSlope, thermal, zone) %>%
+  # Create binary columns for each thermal category
+  pivot_wider(id_cols = c(id_c, MeanSlope), 
+              names_from = thermal, 
+              values_from = thermal, 
+              names_prefix = "thermal_", 
+              values_fn = list(thermal = ~ 1), 
+              values_fill = list(thermal = 0)) %>%
+  # Retain MeanSlope before the second pivot for zone
+  left_join(
+    slope.df %>%
+      select(id_c, zone) %>%
+      pivot_wider(id_cols = id_c, 
+                  names_from = zone, 
+                  values_from = zone, 
+                  names_prefix = "zone_", 
+                  values_fn = list(zone = ~ 1), 
+                  values_fill = list(zone = 0)), 
+    by = "id_c"
+  ) %>%
+  mutate(log_slope = log(MeanSlope)) %>%
+  select(-MeanSlope)
+
 
 Xmat <- Xmat_LU %>% 
   select(-forest_share) %>% 
@@ -238,6 +275,8 @@ Xmat <- Xmat_LU %>%
   left_join(Xmat_Travel) %>% 
   left_join(Xmat_pop) %>% 
   left_join(Xmat_ForestManagement) %>% 
+  left_join(Xmat_alt) %>% 
+  left_join(Xmat_slope) %>% 
   select(-c(cropland, otherland, urban, pasture, forest)) %>% #, SRP_share)) %>% 
   #pivot back longer to fit the DownscalR package structure
   pivot_longer(-id_c, values_to = "value", names_to = "ks") %>% 
@@ -269,7 +308,7 @@ lu_levels <- LandCover.df %>%
 ```
 
 ```{r create df used for priors relative to the country, echo = FALSE, message=FALSE}
-
+#find where I have NAs in the Xmat matrix to remove those cells else the MNL cannot run
 rm_na <- Xmat$ns[which(is.na(Xmat), arr.ind = T)[,1]]
 
 country_df <- list(xmat = tibble(Xmat %>% 
@@ -401,8 +440,6 @@ dev.off()
 
 ```{r, echo = FALSE, message = FALSE}
 
-
-
 results_DS_LUC <- results_DS
 results_DS_LUC$out.res <- rbind(
   results_DS_LUC$out.res %>% 
@@ -441,32 +478,7 @@ plot(Transition_plot$LUC.plot +
   ggplot2::scale_fill_gradient2()+
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm")))
 dev.off()
-#palette = color, 
-                                #name=label)#, 
-                                #direction = 1)#, 
-                                #limit = limit)
 
-
-# plot_obj <- ggplot2::ggplot() +
-#     ggplot2::geom_tile(data=Transition_plot[["plot.df"]], 
-#                        aes(x=x, y=y, 
-#                            # fill=factor(cut(value, breaks =  unique(quantile(value, probs = seq(0.,1,0.10))))),
-#                            fill = factor(cut(value, 
-#                                              breaks = fullseq(range(value),(range(value)[2]-range(value)[1])/8))),
-#                            group=lu.to), 
-#                        alpha=0.8) +
-#     ggplot2::scale_fill_manual(values = RColorBrewer::brewer.pal(9, "PRGn"),#palette = "PRGn",
-#                                   #direction = 1,
-#                                   #limit = limit#,
-#                                   #name=label
-#                                   name = NULL)+
-#     ggplot2::coord_equal() +
-#     ggthemes::theme_map() +
-#     ggplot2::theme(legend.position="bottom") +
-#     ggplot2::theme(legend.key.width=unit(2, "cm"))+
-#     ggplot2::facet_grid(times~lu.to)
-#   
-# plot_obj
 
 ```
 
