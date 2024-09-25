@@ -56,10 +56,12 @@ Travel <- geojson_read(here("Data", country, "TravelTime.geojson"),  what = "sp"
 Travel.df <- Travel@data %>% 
   select(-id)
 
+#this is in km2
 LandCover <- geojson_read(here("Data", country, "LandCoverCopernicus2019.geojson"),  what = "sp")
 LandCover.df <- LandCover@data %>% 
   select(-id)
 
+#this is in km2
 LandCoverChange <- geojson_read(here("Data", country, "LandCoverChangeHILDA2018_2019.geojson"),  what = "sp")
 LandCoverChange.df <- LandCoverChange@data %>% 
    select(-id)
@@ -104,7 +106,7 @@ Check in the table below that all land cover of interest and all possible transi
 -   The matrix should be filled with the same number in each cell (i.e. the number of pixels for your country's grid representation in 50km x 50km)
 
 ```{r changing LandCoverChange data structure , echo = FALSE, message = FALSE}
-
+#value is the percentage of the cell that is going from land cover to another
 country_luc <- LandCoverChange.df %>% 
   #creating the structure to have land cover change information per id
   select(id_c) %>% 
@@ -410,15 +412,49 @@ table(FABLE$lu.from, FABLE$lu.to)
 ```
 
 ```{r Harmonize targets and Land Cover Change baseline map}
-country_LUC_ag <- country_luc %>% 
+country_LUC_ag <- LandCoverChange.df %>% 
+  #creating the structure to have land cover change information per id
+  select(id_c) %>% 
+  mutate(temp = 1) %>% 
+  full_join(map_HILDA%>%  mutate(code = as.character(code)) %>% mutate(temp = 1), relationship = "many-to-many") %>% 
+  #merge with data on Land Cover Change per code
+  left_join(LandCoverChange.df %>% 
+  pivot_longer(-c(id_c), values_to = "AreaPerCode") %>% 
+  #associate land cover code with right name
+  mutate(name = stringr::str_remove(name, "X")) %>% 
+  left_join(map_HILDA %>%  mutate(code = as.character(code)), by = c("name" = "code")),
+  relationship = "many-to-many") %>%
+  #remove ocean and water
+  filter(!(from %in% c("ocean", "water"))) %>% 
+  mutate(AreaPerCode = as.numeric(AreaPerCode)) %>% 
+  #set the right variable names to use in DownscalR package
+  group_by(id_c, from, to) %>% 
+  summarise(value = sum(AreaPerCode, na.rm = T)) %>% 
+  rename(ns = id_c,
+         lu.from = from,
+         lu.to = to) %>% 
+  mutate(Ts = 2018) %>% 
+  dplyr::select(ns, lu.from, lu.to, Ts, value) %>% 
+  mutate(value = ifelse(is.na(value), 0, value)) %>% 
   group_by(lu.from, lu.to, Ts) %>%
-  summarise(value_HILDA = sum(value, na.rm = TRUE), .groups = 'drop') %>% 
+  #/1000 to get same unit as FABLE targets
+  summarise(value_HILDA = sum(value, na.rm = TRUE)/1000, .groups = 'drop') %>% #/1000 to get same unit as FABLE targets
   rename(times = Ts) %>% 
   mutate(times = 2020)
 
+
+Baseline_LU <- Xmat_LU %>% 
+  select(id_c, cropland, forest, otherland, pasture, urban) %>% 
+  pivot_longer(cols = c(cropland:urban), values_to = "value_Copernicus", names_to = "LandCover") %>% 
+  group_by(LandCover) %>% 
+  summarise(value_Copernicus = sum(value_Copernicus, na.rm = T)/1000) %>% 
+  pivot_wider(names_from = LandCover, values_from = value_Copernicus) %>% 
+  mutate(year = 2019)
+
+
 comp <- country_LUC_ag %>% 
   left_join(FABLE %>% 
-              #mutate(value = value/1000) %>%
+              mutate(value = value/5) %>%
               rename(value_FABLE = value))
 ```
 
