@@ -256,14 +256,14 @@ Xmat_slope <- slope.df %>%
 
 
 Xmat <- Xmat_LU %>% 
-  select(-forest_share) %>% 
+  #select(-forest_share) %>% 
   mutate(Intercept = 1) %>% 
   left_join(Xmat_Travel) %>% 
   left_join(Xmat_pop) %>% 
   left_join(Xmat_ForestManagement) %>% 
   left_join(Xmat_alt) %>% 
   left_join(Xmat_slope) %>% 
-  select(-c(cropland, otherland, urban, pasture, forest)) %>% #, SRP_share)) %>% 
+ # select(-c(cropland, otherland, urban, pasture, forest)) %>% #, SRP_share)) %>% 
   #pivot back longer to fit the DownscalR package structure
   pivot_longer(-id_c, values_to = "value", names_to = "ks") %>% 
   rename(ns = id_c)
@@ -363,7 +363,7 @@ country_LUC_ag <- LandCoverChange.df %>%
   mutate(value = ifelse(is.na(value), 0, value)) %>% 
   group_by(lu.from, lu.to, Ts) %>%
   #this is in km2 so I divide by 10 to get in 1000 ha
-  summarise(value_HILDA = sum(value, na.rm = TRUE)/10, .groups = 'drop') %>% #/1000 to get same unit as FABLE targets
+  summarise(value_HILDA = sum(value, na.rm = TRUE)/10, .groups = 'drop') %>% 
   rename(times = Ts) %>% 
   mutate(times = 2020)
 
@@ -383,6 +383,10 @@ comp <- country_LUC_ag %>%
               mutate(value = value/5) %>%
               rename(value_FABLE = value)) %>% 
   filter(lu.from!=lu.to)
+
+
+
+
 ```
 
 
