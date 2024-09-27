@@ -173,7 +173,7 @@ Xmat_LU <- LandCover.df %>%
   #this is in km2 so I divide by 10 to get in 1000 ha to match FABLE unit
   summarise(value = sum(AreaPerCover, na.rm = TRUE)/10, .groups = 'drop') %>%
   # Pivot wider to spread land cover types into columns
-  pivot_wider(names_from = "LandCover", values_from = "value", values_fill = 0) %>%
+  pivot_wider(names_from = "LandCover", values_from = "value", values_fill = 0) #%>%
   
   ### This is the part where I compute the share that I will temporarily remove from the script while Tamas temas works on the updating of downscalR to include the dynamic update of the shares in Xmat after downscaling
   
@@ -209,21 +209,7 @@ Xmat_ForestManagement <- ForestManagement.df %>%
   group_by(id_c, type) %>%
   summarise(value = sum(AreaPerCover, na.rm = TRUE), .groups = 'drop') %>%
   # Pivot wider to create columns for each forest management type
-  pivot_wider(names_from = type, values_from = value, values_fill = 0) %>%
-  # Add total and compute forest management shares
-  rowwise() %>%
-  mutate(total = sum(c_across(-id_c), na.rm = TRUE),
-         total = ifelse(total == 0, 1, total),
-         across(-c(id_c, total), ~ .x / total, .names = "{.col}_share")) %>%
-  ungroup() %>%
-  select(-total) %>%
-  # Join with Xmat_LU to add the forest share
-  left_join(Xmat_LU %>% select(id_c, forest_share), by = "id_c") %>%
-  # Multiply all share columns by forest_share
-  mutate(across(contains("_share"), ~ .x * forest_share)) %>%
-  # Clean up the result, dropping intermediate columns
-  select(id_c, contains("_share"))
-
+  pivot_wider(names_from = type, values_from = value, values_fill = 0) 
 
 
 #Mean Travel time
