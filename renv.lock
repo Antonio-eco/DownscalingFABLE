@@ -380,7 +380,7 @@
       "RemoteRepo": "downscalr",
       "RemoteUsername": "tkrisztin",
       "RemoteRef": "HEAD",
-      "RemoteSha": "1321c74d8e624bc124a8dd4938c9c4094ac14afa",
+      "RemoteSha": "119997f1acfd5b33046dc86812d7dd37f023cded",
       "Requirements": [
         "BayesLogit",
         "MASS",
@@ -396,7 +396,7 @@
         "tibble",
         "tidyr"
       ],
-      "Hash": "1d16a9d4390d586c13b2e8ff40e52546"
+      "Hash": "62ffeed401060bef4fb6d201e03f79e1"
     },
     "dplyr": {
       "Package": "dplyr",
