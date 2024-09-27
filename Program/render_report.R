@@ -3,6 +3,11 @@
 # Master file for generating automatically individual report for downscaling
 
 
+# latest version of downscalR ---------------------------------------------
+
+# devtools::install_github("tkrisztin/downscalr", ref="HEAD", repos = "http://cran.us.r-project.org")
+
+
 # Libraries ---------------------------------------------------------------
 
 library(purrr)
