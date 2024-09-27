@@ -174,25 +174,28 @@ Xmat_LU <- LandCover.df %>%
   summarise(value = sum(AreaPerCover, na.rm = TRUE)/10, .groups = 'drop') %>%
   # Pivot wider to spread land cover types into columns
   pivot_wider(names_from = "LandCover", values_from = "value", values_fill = 0) %>%
-  # Remove unwanted land cover types
-  # select(-c(unknwon, water, ocean)) %>%
-  # Compute the share of each land use class
-  rowwise() %>%
-  mutate(
-    notrelevant = sum(c_across(c(unknown, water, ocean, notrelevant)), na.rm = TRUE)) %>% 
-  select(-c(unknown, water, ocean)) %>%
-  mutate(
-    # Calculate total area of selected land cover classes, avoid NaN by setting total to 1 if sum is 0
-    total = ifelse(sum(c_across(c(cropland, forest, otherland, pasture, urban, notrelevant)), na.rm = TRUE) == 0, 
-                   1, 
-                   sum(c_across(c(cropland, forest, otherland, pasture, urban, notrelevant)), na.rm = TRUE)),
-    # Compute shares for each land cover class
-    across(c(cropland, forest, otherland, pasture, urban), ~ .x / total, .names = "{.col}_share")
-  ) %>%
-  ungroup() %>%
-  # Remove the total column because it won't be used
-  #Remove the notrelevant column to avoid any collinearity
-  select(-c(total, notrelevant))
+  
+  ### This is the part where I compute the share that I will temporarily remove from the script while Tamas temas works on the updating of downscalR to include the dynamic update of the shares in Xmat after downscaling
+  
+  # # Remove unwanted land cover types
+  # # select(-c(unknwon, water, ocean)) %>%
+  # # Compute the share of each land use class
+  # rowwise() %>%
+  # mutate(
+  #   notrelevant = sum(c_across(c(unknown, water, ocean, notrelevant)), na.rm = TRUE)) %>% 
+  # select(-c(unknown, water, ocean)) %>%
+  # mutate(
+  #   # Calculate total area of selected land cover classes, avoid NaN by setting total to 1 if sum is 0
+  #   total = ifelse(sum(c_across(c(cropland, forest, otherland, pasture, urban, notrelevant)), na.rm = TRUE) == 0, 
+  #                  1, 
+  #                  sum(c_across(c(cropland, forest, otherland, pasture, urban, notrelevant)), na.rm = TRUE)),
+  #   # Compute shares for each land cover class
+  #   across(c(cropland, forest, otherland, pasture, urban), ~ .x / total, .names = "{.col}_share")
+  # ) %>%
+  # ungroup() %>%
+  # # Remove the total column because it won't be used
+  # # Remove the notrelevant column to avoid any collinearity
+  # select(-c(total, notrelevant))
 
 #ForestManagement
 Xmat_ForestManagement <- ForestManagement.df %>%
