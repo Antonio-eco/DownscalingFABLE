@@ -164,10 +164,11 @@ table(country_luc$lu.from, country_luc$lu.to)
 
 # Harmonizing start map with FABLE Calculator baseline map
 
-```{r changing land cover structure to create start_map, echo = FALSE, message = FALSE}
+We need to harmonize the high-resolution baseline map used in the downscalR function with the aggregated land-use data from the FABLE Calculator. This ensures that the spatially explicit baseline map aligns with the aggregated land-use data in FABLE. Without this alignment, there could be discrepancies in the starting levels of each land-use class, making the future land-use transitions projected by the FABLE Calculator unrealistic when applied to the unadjusted high-resolution map.
+
+```{r changing land cover structure to create start_map harmonized with FABLE aggregated land cover, echo = FALSE, message = FALSE}
 
 #land use level per cell per land cover class in baseline year
-
 start_map <- LandCover.df %>%
   # Pivot to long format and convert AreaPerCover to numeric
   pivot_longer(-id_c, values_to = "AreaPerCover") %>%
@@ -192,7 +193,7 @@ start_map_harm <- start_map %>%
   rename(lu = lu.from) %>% 
   mutate(lu = ifelse(is.na(lu), "not relevant", lu))
 
-
+#FABLE Calculator aggregated land use level in baseline year
 LC_targets <- readxl::read_excel(here("Data", country, "FABLE.xlsx"), sheet = "Baseline") %>% 
   rename(lu = LandCover)
 
@@ -230,9 +231,6 @@ CLC_FABLE_shares <- LUC_targets %>%
   pivot_wider(id_cols = c(lu.from), names_from = "lu.to", values_from = "value") %>% 
   replace(is.na(.), 0) %>% # Replace NA with 0 for clarity
   pivot_longer(cols = !c(lu.from), names_to = "lu.to", values_to = "proj_share")
-
-# Optional saving of the transition shares to an RDS file
-# saveRDS(CLC_GLOB_shares, 'APPROX_TRANS_MATRIX.rds')
 
 # Apply the transition shares to the high-resolution start map for downscaling
 start_map_reproj <- left_join(start_map, CLC_FABLE_shares) %>% 
@@ -285,28 +283,6 @@ table(FABLE$lu.from, FABLE$lu.to)
 Xmat_LU <- start_map_reproj %>% 
   pivot_wider(names_from = "lu.from", values_from = "value", values_fill = 0) %>% 
   rename(id_c = ns)
-  
-  ### This is the part where I compute the share that I will temporarily remove from the script while Tamas temas works on the updating of downscalR to include the dynamic update of the shares in Xmat after downscaling
-  
-  # # Remove unwanted land cover types
-  # # select(-c(unknwon, water, ocean)) %>%
-  # # Compute the share of each land use class
-  # rowwise() %>%
-  # mutate(
-  #   notrelevant = sum(c_across(c(unknown, water, ocean, notrelevant)), na.rm = TRUE)) %>% 
-  # select(-c(unknown, water, ocean)) %>%
-  # mutate(
-  #   # Calculate total area of selected land cover classes, avoid NaN by setting total to 1 if sum is 0
-  #   total = ifelse(sum(c_across(c(cropland, forest, otherland, pasture, urban, notrelevant)), na.rm = TRUE) == 0, 
-  #                  1, 
-  #                  sum(c_across(c(cropland, forest, otherland, pasture, urban, notrelevant)), na.rm = TRUE)),
-  #   # Compute shares for each land cover class
-  #   across(c(cropland, forest, otherland, pasture, urban), ~ .x / total, .names = "{.col}_share")
-  # ) %>%
-  # ungroup() %>%
-  # # Remove the total column because it won't be used
-  # # Remove the notrelevant column to avoid any collinearity
-  # select(-c(total, notrelevant))
 
 #ForestManagement
 Xmat_ForestManagement <- ForestManagement.df %>%
@@ -340,6 +316,20 @@ Xmat_alt <- altitude.df %>% select(id_c, MeanAltitude) %>%
   mutate(log_altitude = log(MeanAltitude)) %>% 
   select(-MeanAltitude)
 
+mode_thermal <- slope.df %>%
+    select(id_c, thermal) %>%
+    group_by(thermal) %>%          # Group by the "thermal" column
+    summarize(count = n()) %>%     # Count the occurrences of each unique value in "thermal"
+    arrange(desc(count)) %>%       # Sort by the count in descending order
+    slice(1)    
+
+mode_zone <- slope.df %>%
+    select(id_c, zone) %>%
+    group_by(zone) %>%          # Group by the "thermal" column
+    summarize(count = n()) %>%     # Count the occurrences of each unique value in "thermal"
+    arrange(desc(count)) %>%       # Sort by the count in descending order
+    slice(1)    
+
 #Slope and data from GAEZ on zone and thermal 
 Xmat_slope <- slope.df %>%
   select(id_c, MeanSlope, thermal, zone) %>%
@@ -363,7 +353,10 @@ Xmat_slope <- slope.df %>%
     by = "id_c"
   ) %>%
   mutate(log_slope = log(MeanSlope)) %>%
-  select(-MeanSlope)
+  select(-c(MeanSlope, 
+            paste("thermal", mode_thermal$thermal, sep = "_"),
+            paste("zone", mode_zone$zone, sep = "_")))
+  
 
 
 Xmat <- Xmat_LU %>% 
@@ -382,72 +375,15 @@ Xmat <- Xmat_LU %>%
 ```
 
 
-
 ```{r create df used for priors relative to the country, echo = FALSE, message=FALSE}
 #find where I have NAs in the Xmat matrix to remove those cells else the MNL cannot run
 rm_na <- Xmat$ns[which(is.na(Xmat), arr.ind = T)[,1]]
 
 country_df <- list(xmat = tibble(Xmat %>% 
                                    filter(!(ns %in% rm_na))), 
-                   lu_levels = tibble(lu_levels %>% 
+                   lu_levels = tibble(start_map_reproj %>% 
                                         filter(!(ns %in% rm_na))))
 ```
-
-
-```{r Harmonize targets and Land Cover Change baseline map}
-country_LUC_ag <- LandCoverChange.df %>% 
-  #creating the structure to have land cover change information per id
-  select(id_c) %>% 
-  mutate(temp = 1) %>% 
-  full_join(map_HILDA_LUC%>%  mutate(code = as.character(code)) %>% mutate(temp = 1), relationship = "many-to-many") %>% 
-  #merge with data on Land Cover Change per code
-  left_join(LandCoverChange.df %>% 
-  pivot_longer(-c(id_c), values_to = "AreaPerCode") %>% 
-  #associate land cover code with right name
-  mutate(name = stringr::str_remove(name, "X")) %>% 
-  left_join(map_HILDA_LUC %>%  mutate(code = as.character(code)), by = c("name" = "code")),
-  relationship = "many-to-many") %>%
-  #remove ocean and water
-  filter(!(from %in% c("ocean", "water"))) %>% 
-  mutate(AreaPerCode = as.numeric(AreaPerCode)) %>% 
-  #set the right variable names to use in DownscalR package
-  group_by(id_c, from, to) %>% 
-  summarise(value = sum(AreaPerCode, na.rm = T)) %>% 
-  rename(ns = id_c,
-         lu.from = from,
-         lu.to = to) %>% 
-  mutate(Ts = 2018) %>% 
-  dplyr::select(ns, lu.from, lu.to, Ts, value) %>% 
-  mutate(value = ifelse(is.na(value), 0, value)) %>% 
-  group_by(lu.from, lu.to, Ts) %>%
-  #this is in km2 so I divide by 10 to get in 1000 ha
-  summarise(value_HILDA = sum(value, na.rm = TRUE)/10, .groups = 'drop') %>% 
-  rename(times = Ts) %>% 
-  mutate(times = 2020)
-
-
-Baseline_LU <- Xmat_LU %>% 
-  select(id_c, cropland, forest, otherland, pasture, urban) %>% 
-  pivot_longer(cols = c(cropland:urban), values_to = "value_Copernicus", names_to = "LandCover") %>% 
-  group_by(LandCover) %>% 
-  #this is in km2 so I divide by 10 to get in 1000 ha
-  summarise(value_Copernicus = sum(value_Copernicus, na.rm = T)/10) %>% 
-  pivot_wider(names_from = LandCover, values_from = value_Copernicus) %>% 
-  mutate(year = 2019)
-
-
-comp <- country_LUC_ag %>% 
-  left_join(FABLE %>% 
-              mutate(value = value/5) %>%
-              rename(value_FABLE = value)) %>% 
-  filter(lu.from!=lu.to)
-
-
-
-
-```
-
-
 
 
 # Estimate MNL model
