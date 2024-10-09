@@ -57,12 +57,12 @@ Travel.df <- Travel@data %>%
   select(-id)
 
 #this is in km2 
-LandCover <- geojson_read(here("Data", country, "LandCoverCopernicus2019.geojson"),  what = "sp")
+LandCover <- geojson_read(here("Data", country, "LandCoverHILDA2015.geojson"),  what = "sp")
 LandCover.df <- LandCover@data %>% 
   select(-id)
 
 #this is in km2
-LandCoverChange <- geojson_read(here("Data", country, "LandCoverChangeHILDA2018_2019.geojson"),  what = "sp")
+LandCoverChange <- geojson_read(here("Data", country, "LandCoverChangeHILDA2015_2019.geojson"),  what = "sp")
 LandCoverChange.df <- LandCoverChange@data %>% 
    select(-id)
 
@@ -83,6 +83,9 @@ slope.df <- slope@data %>%
 
 map_HILDA <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
                         sheet = "HILDA")
+
+map_HILDA_LUC <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
+                        sheet = "HILDA_change")
 
 map_Copernicus <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
                                 sheet = "Copernicus")
@@ -111,7 +114,7 @@ country_luc <- LandCoverChange.df %>%
   pivot_longer(-c(id_c), values_to = "AreaPerCode") %>% 
   #associate land cover code with right name
   mutate(name = stringr::str_remove(name, "X")) %>% 
-  left_join(map_HILDA %>%  mutate(code = as.character(code)), by = c("name" = "code"))%>%
+  left_join(map_HILDA_LUC %>%  mutate(code = as.character(code)), by = c("name" = "code"))%>%
   #remove ocean and water
   filter(!(from %in% c("ocean", "water"))) %>% 
   mutate(AreaPerCode = as.numeric(AreaPerCode)) %>% 
@@ -127,7 +130,7 @@ country_luc <- LandCoverChange.df %>%
   rename(ns = id_c,
          lu.from = from,
          lu.to = to) %>% 
-  mutate(Ts = 2018) %>% 
+  mutate(Ts = 2015) %>% 
   dplyr::select(ns, lu.from, lu.to, Ts, value) %>% 
   mutate(value = ifelse(is.na(value), 0, value)) %>% 
   ####if lu.to is forest but coming from something else than lu.from = forest then it is new forest for FABLE design
@@ -137,7 +140,7 @@ country_luc <- LandCoverChange.df %>%
                    lu.from = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), 
                                  each = length(unique(LandCoverChange.df$id_c))),
                    lu.to = "forest",
-                   Ts = 2018,
+                   Ts = 2015,
                    value = 0)) %>% 
   #add the land transition from newforest to any other (but forest that has been added in previous step)
   # and set it to zero so that the transition is in the matrix even though not in the calibration and won't be used
@@ -145,14 +148,14 @@ country_luc <- LandCoverChange.df %>%
                    lu.from = "newforest",
                    lu.to = rep(c("cropland", "newforest", "otherland", "pasture", "urban"), 
                                each = length(unique(LandCoverChange.df$id_c))),
-                   Ts = 2018,
+                   Ts = 2015,
                    value = 0)) %>% 
   #add land transition from forest to newforest and set it to zero so that the transition is in the matrix even though not in the calibration and won't be used
   rbind(data.frame(ns = unique(LandCoverChange.df$id_c),
                    lu.from = "forest",
                    lu.to = rep(c("newforest"), 
                                each = length(unique(LandCoverChange.df$id_c))),
-                   Ts = 2018,
+                   Ts = 2015,
                    value = 0)) 
 
 table(country_luc$lu.from, country_luc$lu.to)
@@ -167,7 +170,7 @@ Xmat_LU <- LandCover.df %>%
   mutate(AreaPerCover = as.numeric(AreaPerCover),
          name = str_remove(name, "X")) %>%
   # Join with map_Copernicus to get LandCover names
-  left_join(map_Copernicus %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
+  left_join(map_HILDA %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
   # Summarize total area per land cover class
   group_by(id_c, LandCover) %>%
   #this is in km2 so I divide by 10 to get in 1000 ha to match FABLE unit
@@ -280,7 +283,7 @@ lu_levels <- LandCover.df %>%
   mutate(AreaPerCover = as.numeric(AreaPerCover),
          name = str_remove(name, "X")) %>%
   # Join with map_Copernicus and filter out "ocean" and "water"
-  left_join(map_Copernicus %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
+  left_join(map_HILDA %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
   filter(!LandCover %in% c("ocean", "water")) %>%
   # Group by id_c and LandCover, summarizing the total area per cover class
   group_by(id_c, LandCover) %>%
@@ -341,13 +344,13 @@ country_LUC_ag <- LandCoverChange.df %>%
   #creating the structure to have land cover change information per id
   select(id_c) %>% 
   mutate(temp = 1) %>% 
-  full_join(map_HILDA%>%  mutate(code = as.character(code)) %>% mutate(temp = 1), relationship = "many-to-many") %>% 
+  full_join(map_HILDA_LUC%>%  mutate(code = as.character(code)) %>% mutate(temp = 1), relationship = "many-to-many") %>% 
   #merge with data on Land Cover Change per code
   left_join(LandCoverChange.df %>% 
   pivot_longer(-c(id_c), values_to = "AreaPerCode") %>% 
   #associate land cover code with right name
   mutate(name = stringr::str_remove(name, "X")) %>% 
-  left_join(map_HILDA %>%  mutate(code = as.character(code)), by = c("name" = "code")),
+  left_join(map_HILDA_LUC %>%  mutate(code = as.character(code)), by = c("name" = "code")),
   relationship = "many-to-many") %>%
   #remove ocean and water
   filter(!(from %in% c("ocean", "water"))) %>% 
@@ -406,7 +409,7 @@ Yraw <- country_luc %>%
 
 for(cur_LU.from in c("urban", "cropland", "pasture", "forest", "otherland", "newforest")){
   
- Y <- dplyr::filter(Yraw,lu.from == cur_LU.from & Ts == 2018) %>% #changes 2018 to 2019
+ Y <- dplyr::filter(Yraw,lu.from == cur_LU.from & Ts == 2015) %>% #changes 2018 to 2019
   tidyr::pivot_wider(names_from = lu.to) %>%
   tibble::column_to_rownames(var = "ns") %>%
   dplyr::select(-c(lu.from, Ts))
