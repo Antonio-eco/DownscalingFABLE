@@ -162,6 +162,124 @@ table(country_luc$lu.from, country_luc$lu.to)
   
 ```
 
+# Harmonizing start map with FABLE Calculator baseline map
+
+```{r changing land cover structure to create start_map, echo = FALSE, message = FALSE}
+
+#land use level per cell per land cover class in baseline year
+
+start_map <- LandCover.df %>%
+  # Pivot to long format and convert AreaPerCover to numeric
+  pivot_longer(-id_c, values_to = "AreaPerCover") %>%
+  mutate(AreaPerCover = as.numeric(AreaPerCover),
+         name = str_remove(name, "X")) %>%
+  # Join with map_Copernicus and filter out "ocean" and "water"
+  left_join(map_HILDA %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
+  filter(!LandCover %in% c("ocean", "water")) %>%
+  # Group by id_c and LandCover, summarizing the total area per cover class
+  group_by(id_c, LandCover) %>%
+  #this is in km2 so I divide by 10 to get in 1000 ha
+  summarise(value = sum(AreaPerCover, na.rm = TRUE)/10, .groups = 'drop') %>%
+  # Rename columns for clarity
+  rename(ns = id_c, lu.from = LandCover) %>%
+  # Add rows for "newforest" with value = 0 for each unique id_c
+  bind_rows(data.frame(ns = unique(LandCover.df$id_c), lu.from = "newforest", value = 0)) %>% 
+  mutate(lu.from = ifelse(is.na(lu.from), "not relevant", lu.from))
+  
+start_map_harm <- start_map %>% 
+  group_by(lu.from) %>% 
+  summarise(value = sum(value, na.rm = T)) %>% 
+  rename(lu = lu.from) %>% 
+  mutate(lu = ifelse(is.na(lu), "not relevant", lu))
+
+
+LC_targets <- readxl::read_excel(here("Data", country, "FABLE.xlsx"), sheet = "Baseline") %>% 
+  rename(lu = LandCover)
+
+keep <- "from" # Specify which areas to keep during transition
+
+# Calculate land-use change targets based on the start and target data
+LUC_targets <- LU_to_LUC(start_map_harm, 
+                              LC_targets, 
+                              keep_areas = keep)
+
+# Create a check data frame to validate the results
+check_df <- rbind(NULL,
+                  left_join(
+                    start_map_harm %>% group_by(lu) %>% 
+                      rename(lu.from = "lu") %>% 
+                      reframe(value_start = sum(value)), 
+                    LC_targets %>% group_by(lu) %>% 
+                      rename(lu.to = "lu") %>% 
+                      reframe(value_target = sum(value)), 
+                    by = c("lu.from" = "lu.to")) %>%
+                    left_join(LUC_targets %>% 
+                                group_by(lu.to) %>% 
+                                rename(value_new = "value") %>% 
+                                reframe(value_new = sum(value_new)), 
+                              by = c("lu.from" = "lu.to")) %>% 
+                    select(lu.from, value_start, value_target, value_new) %>%
+                    mutate(new_target_diff = value_new - value_target, 
+                           value_rebalance = sum(value_start) * (value_target / sum(value_target)), 
+                           rebalance_new_diff = value_rebalance - value_new))
+
+### Calculate implied transition shares from LUC targets
+CLC_FABLE_shares <- LUC_targets %>% 
+  group_by(lu.from) %>% 
+  mutate(value = value / sum(value)) %>% # Normalize values to get shares
+  pivot_wider(id_cols = c(lu.from), names_from = "lu.to", values_from = "value") %>% 
+  replace(is.na(.), 0) %>% # Replace NA with 0 for clarity
+  pivot_longer(cols = !c(lu.from), names_to = "lu.to", values_to = "proj_share")
+
+# Optional saving of the transition shares to an RDS file
+# saveRDS(CLC_GLOB_shares, 'APPROX_TRANS_MATRIX.rds')
+
+# Apply the transition shares to the high-resolution start map for downscaling
+start_map_reproj <- left_join(start_map, CLC_FABLE_shares) %>% 
+  mutate(value = ifelse(!is.na(lu.to), value * proj_share, value), # Adjust values based on shares
+         lu.to = ifelse(is.na(lu.to), lu.from, lu.to)) %>% # Update land use type
+  group_by(ns, lu.to) %>% 
+  summarize(value = sum(value)) %>% # Sum values for each unique combination
+  ungroup() %>% 
+  drop_na() %>% # Remove rows with NA values
+  rename(lu.from = "lu.to") # Rename for consistency
+
+
+```
+# Checking FABLE land use change projections to downscale
+
+Check in the table below that in the land use changes projected in your calculator, all land cover of interest and all transitions are included in the land transition matrix.
+
+-   The structure of the matrix should be such that you have the same rownames and colnames. Check that you have all land covers, by default it should be cropland, forest, new forest, otherland, pasture and urban.
+
+-   The matrix should be filled with 10 in each cell (i.e. the number of year periods in the calculator).
+
+-   The diagonal should be filled with zeros.
+
+```{r FABLE data prep, echo = FALSE, message = FALSE}
+
+FABLE <- readxl::read_excel(here("Data", country, "FABLE.xlsx"), sheet = pathway) %>%
+  # In calculator, sheet 4_calc_land, 
+  # table calc_landmatrix, columns LandCoverInit	YearStart	YearEnd	ToForest	ToOtherLand	ToCropland	ToPasture	ToUrban	ToNewForest
+  
+  # Remove YearStart and reshape to long format
+  select(-YearStart) %>%
+  pivot_longer(-c(YearEnd, LandCoverInit), values_to = "value", names_to = "lu.to") %>%
+  # Clean and adjust land cover names
+  mutate(
+    lu.from = tolower(LandCoverInit),
+    lu.to = tolower(str_remove(lu.to, "To")),
+    times = YearEnd
+  ) %>%
+  # Select necessary columns and filter out unchanged land covers
+  select(times, lu.from, lu.to, value) %>%
+  filter(lu.from != lu.to)
+  
+table(FABLE$lu.from, FABLE$lu.to)
+
+```
+
+
 ```{r create Xmat matric of explanatory variables, echo = FALSE, message = FALSE}
 
 Xmat_LU <- LandCover.df %>%
@@ -177,6 +295,10 @@ Xmat_LU <- LandCover.df %>%
   summarise(value = sum(AreaPerCover, na.rm = TRUE)/10, .groups = 'drop') %>%
   # Pivot wider to spread land cover types into columns
   pivot_wider(names_from = "LandCover", values_from = "value", values_fill = 0) #%>%
+
+Xmat_LU_bis <- start_map_reproj %>% 
+  pivot_wider(names_from = "lu.from", values_from = "value", values_fill = 0) %>% 
+  rename(id_c = ns)
   
   ### This is the part where I compute the share that I will temporarily remove from the script while Tamas temas works on the updating of downscalR to include the dynamic update of the shares in Xmat after downscaling
   
@@ -273,28 +395,7 @@ Xmat <- Xmat_LU %>%
 
 ```
 
-```{r changing land cover structure to create lu_levels, echo = FALSE, message = FALSE}
 
-#land use level per cell per land cover class in baseline year
-
-lu_levels <- LandCover.df %>%
-  # Pivot to long format and convert AreaPerCover to numeric
-  pivot_longer(-id_c, values_to = "AreaPerCover") %>%
-  mutate(AreaPerCover = as.numeric(AreaPerCover),
-         name = str_remove(name, "X")) %>%
-  # Join with map_Copernicus and filter out "ocean" and "water"
-  left_join(map_HILDA %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
-  filter(!LandCover %in% c("ocean", "water")) %>%
-  # Group by id_c and LandCover, summarizing the total area per cover class
-  group_by(id_c, LandCover) %>%
-  #this is in km2 so I divide by 10 to get in 1000 ha
-  summarise(value = sum(AreaPerCover, na.rm = TRUE)/10, .groups = 'drop') %>%
-  # Rename columns for clarity
-  rename(ns = id_c, lu.from = LandCover) %>%
-  # Add rows for "newforest" with value = 0 for each unique id_c
-  bind_rows(data.frame(ns = unique(LandCover.df$id_c), lu.from = "newforest", value = 0))
-
-```
 
 ```{r create df used for priors relative to the country, echo = FALSE, message=FALSE}
 #find where I have NAs in the Xmat matrix to remove those cells else the MNL cannot run
@@ -306,38 +407,6 @@ country_df <- list(xmat = tibble(Xmat %>%
                                         filter(!(ns %in% rm_na))))
 ```
 
-# Checking FABLE land use change projections to downscale
-
-Check in the table below that in the land use changes projected in your calculator, all land cover of interest and all transitions are included in the land transition matrix.
-
--   The structure of the matrix should be such that you have the same rownames and colnames. Check that you have all land covers, by default it should be cropland, forest, new forest, otherland, pasture and urban.
-
--   The matrix should be filled with 10 in each cell (i.e. the number of year periods in the calculator).
-
--   The diagonal should be filled with zeros.
-
-```{r FABLE data prep, echo = FALSE, message = FALSE}
-
-FABLE <- readxl::read_excel(here("Data", country, "FABLE.xlsx"), sheet = pathway) %>%
-  # In calculator, sheet 4_calc_land, 
-  # table calc_landmatrix, columns LandCoverInit	YearStart	YearEnd	ToForest	ToOtherLand	ToCropland	ToPasture	ToUrban	ToNewForest
-  
-  # Remove YearStart and reshape to long format
-  select(-YearStart) %>%
-  pivot_longer(-c(YearEnd, LandCoverInit), values_to = "value", names_to = "lu.to") %>%
-  # Clean and adjust land cover names
-  mutate(
-    lu.from = tolower(LandCoverInit),
-    lu.to = tolower(str_remove(lu.to, "To")),
-    times = YearEnd
-  ) %>%
-  # Select necessary columns and filter out unchanged land covers
-  select(times, lu.from, lu.to, value) %>%
-  filter(lu.from != lu.to)
-  
-
-table(FABLE$lu.from, FABLE$lu.to)
-```
 
 ```{r Harmonize targets and Land Cover Change baseline map}
 country_LUC_ag <- LandCoverChange.df %>% 
