@@ -282,21 +282,7 @@ table(FABLE$lu.from, FABLE$lu.to)
 
 ```{r create Xmat matric of explanatory variables, echo = FALSE, message = FALSE}
 
-Xmat_LU <- LandCover.df %>%
-  # Pivot the land cover data to long format
-  pivot_longer(-id_c, values_to = "AreaPerCover") %>%
-  mutate(AreaPerCover = as.numeric(AreaPerCover),
-         name = str_remove(name, "X")) %>%
-  # Join with map_Copernicus to get LandCover names
-  left_join(map_HILDA %>% mutate(code = as.character(code)), by = c("name" = "code")) %>%
-  # Summarize total area per land cover class
-  group_by(id_c, LandCover) %>%
-  #this is in km2 so I divide by 10 to get in 1000 ha to match FABLE unit
-  summarise(value = sum(AreaPerCover, na.rm = TRUE)/10, .groups = 'drop') %>%
-  # Pivot wider to spread land cover types into columns
-  pivot_wider(names_from = "LandCover", values_from = "value", values_fill = 0) #%>%
-
-Xmat_LU_bis <- start_map_reproj %>% 
+Xmat_LU <- start_map_reproj %>% 
   pivot_wider(names_from = "lu.from", values_from = "value", values_fill = 0) %>% 
   rename(id_c = ns)
   
