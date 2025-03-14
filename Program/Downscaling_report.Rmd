@@ -20,6 +20,8 @@ library(dplyr)
 library(tidyr)
 library(downscalr)
 library(stringr)
+#library(kableExtra)
+library(knitr)
 ```
 
 
@@ -27,9 +29,9 @@ library(stringr)
 #Please ensure that you have a folder named like the country variable you will input below in your "Output" folder. This is where your maps will be saved.
 
 country = "IND"
-pathway = "CurrentTrends"
-# pathway = "NationalCommitments"
-# pathway = "GlobalSustainability"
+#pathway = "CurrentTrends"
+#pathway = "NationalCommitments"
+pathway = "GlobalSustainability"
 
 ```
 
@@ -94,6 +96,31 @@ map_ForestMgmt <- readxl::read_excel(here("Data/mapping_code.xlsx"),
                                 sheet = "ForestManagement")
 ```
 
+Below is the table of input data used in the prior module of the downscaling process.
+
+```{r echo=FALSE, message=FALSE}
+library(knitr)
+
+# Create the data frame for the table
+table_data <- data.frame(
+  `Variable in econometric model` = c("Dependent", "Land use change", "", 
+                                      "Explanatory variables", "Land use", 
+                                      "Forest Management", "Mean Travel time to major cities", "Population"),
+  Year = c("", "2015-2019", "", "", "2015", "2015", "2000", "2020"),
+  Unit = c("", "% of lu.from in pixel being converted", "", "", 
+           "hectares", "hectares", "minutes", "Count"),
+  Source = c("", "HILDA", "", "", "COPERNICUS", "Lesiv et al.", 
+             "Nelson, A (2008)", "WorldPop")
+)
+
+# Use kable without booktabs
+kable(
+  table_data, 
+  format = "latex", 
+  col.names = c("Variable in econometric model", "Year", "Unit", "Source")
+)
+```
+
 ```{r create raster for maps, include = FALSE}
 #raster to use for plots
 ext <- extent(Travel)
@@ -101,6 +128,8 @@ res <- 0.5
 raster_layer <- raster(ext, res = res)
 rasterized_layer <- rasterize(Travel, raster_layer, field = "id")
 ```
+
+## Checking the land cover change input data
 
 Check in the table below that all land cover of interest and all possible transitions are included in the land transition matrix.
 
@@ -463,10 +492,11 @@ downscaled_LUC <- results_DS$out.res
 
 # Land-use map
 
-```{r, echo = FALSE, message=FALSE}
+```{r, echo = FALSE, message=FALSE, fig.align = "center", fig.width=8, fig.height=8, out.width='100%'}
 LUC_plot <- LUC_plot(results_DS, rasterized_layer)
 plot_to_save <- LUC_plot$LUC.plot +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"))
+  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
+                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
 plot_to_save
 
 # Save the plot as a TIFF file
@@ -479,7 +509,7 @@ rm(plot_to_save)
 
 # Land-use change map
 
-```{r, echo = FALSE, message = FALSE}
+```{r, echo = FALSE, message = FALSE, fig.width=8, fig.height=8, out.width='100%'}
 
 results_DS_LUC <- results_DS
 
@@ -522,7 +552,8 @@ limit <- max(abs(Transition_plot[["plot.df"]]$value)) * c(-1, 1)
 # Step 5: Create the plot with updated scale and theme adjustments
 Transition_plot$LUC.plot + 
   ggplot2::scale_fill_gradient2() +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"))
+  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
+                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
 
 #Save the plot to a .tiff file
 tiff(
@@ -531,7 +562,8 @@ tiff(
 )
 plot(Transition_plot$LUC.plot + 
   ggplot2::scale_fill_gradient2() +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"))
+  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
+                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
 )
 dev.off()
 
@@ -548,7 +580,8 @@ results_DS_2050$out.res <- results_DS_2050$out.res %>%
 # Create the land-use change plot for 2050
 LUC_plot_2050 <- LUC_plot(results_DS_2050, rasterized_layer)
 plot_to_save <- LUC_plot_2050$LUC.plot +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm"))
+  ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm"),
+                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
 plot_to_save
 
 # Save the plot as a TIFF file
