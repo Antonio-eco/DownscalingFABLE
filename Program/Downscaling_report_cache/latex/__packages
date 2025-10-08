@@ -8,3 +8,6 @@ downscalr
 stringr
 knitr
 readr
+forcats
+purrr
+rmarkdown

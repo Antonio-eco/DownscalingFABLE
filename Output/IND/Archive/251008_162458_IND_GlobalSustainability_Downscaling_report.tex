@@ -1,0 +1,532 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\DeclareUnicodeCharacter{2061}{}
+\DeclareUnicodeCharacter{2212}{}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Downscaling},
+  pdfauthor={Clara Douzal},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Downscaling}
+\author{Clara Douzal}
+\date{2025-10-08 16:25}
+
+\begin{document}
+\maketitle
+
+This report is generated for \textbf{IND} for the pathway
+\textbf{GlobalSustainability}.
+
+\section{Checking input data}\label{checking-input-data}
+
+Below is the table of input data used in the prior module of the
+downscaling process.
+
+\begin{tabular}{l|l|l|l}
+\hline
+Variable in econometric model & Year & Unit & Source\\
+\hline
+Dependent &  &  & \\
+\hline
+Land use change & 2015-2019 & \% of lu.from in pixel being converted & HILDA\\
+\hline
+ &  &  & \\
+\hline
+Explanatory variables &  &  & \\
+\hline
+Land use & 2015 & hectares & COPERNICUS\\
+\hline
+Forest Management & 2015 & hectares & Lesiv et al.\\
+\hline
+Mean Travel time to major cities & 2000 & minutes & Nelson, A (2008)\\
+\hline
+Population & 2020 & Count & WorldPop\\
+\hline
+\end{tabular}
+
+\subsection{Checking the land cover change input
+data}\label{checking-the-land-cover-change-input-data}
+
+Check in the table below that all land cover of interest and all
+possible transitions are included in the land transition matrix. With
+``missing\_from'' you can see the number of land transitions thatare
+missing because of a missing initial land cover. With ``missing\_to''
+you can see the number of land transitions that are missing because of a
+missing final land cover.
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule\noalign{}
+kind & value \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+missing\_from & \\
+missing\_to & \\
+\end{longtable}
+
+If any land transitions are missing you can check the table below.
+
+\begin{itemize}
+\item
+  The structure of the matrix should be such that you have the same
+  rownames and colnames. Check that you have all land covers, by default
+  it should be cropland, forest, new forest, otherland, pasture and
+  urban.
+\item
+  The matrix should be filled with the same number in each cell
+  (i.e.~the number of pixels for your country's grid representation in
+  50km x 50km)
+\end{itemize}
+
+\begin{longtable}[]{@{}lrrrrrr@{}}
+\toprule\noalign{}
+& cropland & forest & newforest & otherland & pasture & urban \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+cropland & 1393 & 1393 & 1393 & 1393 & 1393 & 1393 \\
+forest & 1393 & 1393 & 1393 & 1393 & 1393 & 1393 \\
+newforest & 1393 & 1393 & 1393 & 1393 & 1393 & 1393 \\
+otherland & 1393 & 1393 & 1393 & 1393 & 1393 & 1393 \\
+pasture & 1393 & 1393 & 1393 & 1393 & 1393 & 1393 \\
+urban & 1393 & 1393 & 1393 & 1393 & 1393 & 1393 \\
+\end{longtable}
+
+\section{Harmonizing start map with FABLE Calculator baseline
+map}\label{harmonizing-start-map-with-fable-calculator-baseline-map}
+
+We need to harmonize the high-resolution baseline map used in the
+downscalR function with the aggregated land-use data from the FABLE
+Calculator. This ensures that the spatially explicit baseline map aligns
+with the aggregated land-use data in FABLE. Without this alignment,
+there could be discrepancies in the starting levels of each land-use
+class, making the future land-use transitions projected by the FABLE
+Calculator unrealistic when applied to the unadjusted high-resolution
+map.
+
+\section{Checking FABLE land use change projections to
+downscale}\label{checking-fable-land-use-change-projections-to-downscale}
+
+Check in the table below that in the land use changes projected in your
+calculator, all land cover of interest and all transitions are included
+in the land transition matrix.
+
+\begin{itemize}
+\item
+  The structure of the matrix should be such that you have the same
+  rownames and colnames. Check that you have all land covers, by default
+  it should be cropland, forest, new forest, otherland, pasture and
+  urban.
+\item
+  The matrix should be filled with 10 in each cell (i.e.~the number of
+  year periods in the calculator).
+\item
+  The diagonal should be filled with zeros.
+\end{itemize}
+
+\begin{longtable}[]{@{}lrrrrr@{}}
+\toprule\noalign{}
+& cropland & newforest & otherland & pasture & urban \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+cropland & 0 & 10 & 10 & 10 & 10 \\
+forest & 10 & 0 & 10 & 10 & 10 \\
+otherland & 10 & 10 & 0 & 10 & 10 \\
+pasture & 10 & 10 & 10 & 0 & 10 \\
+urban & 10 & 10 & 10 & 10 & 0 \\
+\end{longtable}
+
+We cannot keep the cells that have NAs for some variables that will be
+used as priors.
+
+\begin{longtable}[]{@{}lr@{}}
+\toprule\noalign{}
+ks & n\_na \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+log\_MeanTravelTime & 2 \\
+log\_altitude & 1 \\
+log\_slope & 1 \\
+Agroforestry & 0 \\
+ForestPlanted & 0 \\
+ForestRegNoHuman & 0 \\
+ForestRegWithHuman & 0 \\
+Intercept & 0 \\
+OilPalmPlantation & 0 \\
+SRP & 0 \\
+banana & 0 \\
+barley & 0 \\
+buffalo & 0 \\
+cassava & 0 \\
+cattle & 0 \\
+chicken & 0 \\
+cotton & 0 \\
+cropNES & 0 \\
+cropland & 0 \\
+foddercrops & 0 \\
+forest & 0 \\
+goats & 0 \\
+groundnut & 0 \\
+log\_pop & 0 \\
+maize & 0 \\
+millet & 0 \\
+newforest & 0 \\
+othercereals & 0 \\
+otherland & 0 \\
+pasture & 0 \\
+pigs & 0 \\
+potatoandsweetpotato & 0 \\
+pulses & 0 \\
+rapeseed & 0 \\
+rice & 0 \\
+sheep & 0 \\
+sorghum & 0 \\
+soybean & 0 \\
+stimulants & 0 \\
+sugarcane & 0 \\
+\end{longtable}
+
+\begin{longtable}[]{@{}lr@{}}
+\toprule\noalign{}
+ns & n\_na \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+162571 & 3 \\
+162262 & 1 \\
+152008 & 0 \\
+152009 & 0 \\
+152010 & 0 \\
+152016 & 0 \\
+152017 & 0 \\
+152018 & 0 \\
+152317 & 0 \\
+152318 & 0 \\
+152319 & 0 \\
+152320 & 0 \\
+152321 & 0 \\
+152326 & 0 \\
+152327 & 0 \\
+152328 & 0 \\
+152329 & 0 \\
+152628 & 0 \\
+152629 & 0 \\
+152630 & 0 \\
+\end{longtable}
+
+\textbf{2 grid cell(s) were removed} due to missing covariates. Removed
+cell IDs (showing up to 20): 162262, 162571
+
+\section{Estimate MNL model}\label{estimate-mnl-model}
+
+\section{Downscaling - diagnostics \& quality
+indicators}\label{downscaling---diagnostics-quality-indicators}
+
+\subsection{Aggregate consistency \& diagonal
+zeros}\label{aggregate-consistency-diagonal-zeros}
+
+This table compares the downscaled allocation with the national
+transition targets from the FABLE Calculator for each
+origin--destination land-use pair and year. For every (lu.from
+-\textgreater{} lu.to, time) it shows the allocated area, the target
+area, and a percentage error computed as 100 * (allocated − target)
+divided by the target (with a very small number added to avoid division
+by zero). How to interpret the results? Values should be very close to
+0\%. Systematically positive errors mean the optimizer allocates more
+than requested; negative errors mean less. Large discrepancies usually
+signal a mismatch in years, missing transitions in the targets, or
+binding restrictions that prevent exact matching.
+
+\begin{verbatim}
+## # A tibble: 120 x 6
+##    times lu.from   lu.to      alloc target   pct_err
+##    <int> <chr>     <chr>      <dbl>  <dbl>     <dbl>
+##  1  2025 cropland  newforest  4814.  4814. -1.63e-11
+##  2  2025 cropland  otherland 11889. 11889. -4.64e-12
+##  3  2025 cropland  pasture       0      0   0       
+##  4  2025 cropland  urban       541.   541. -3.11e-11
+##  5  2025 forest    cropland      0      0   0       
+##  6  2025 forest    otherland     0      0   0       
+##  7  2025 forest    pasture       0      0   0       
+##  8  2025 forest    urban         0      0   0       
+##  9  2025 otherland cropland      0      0   0       
+## 10  2025 otherland newforest  1379.  1379.  2.93e-12
+## # i 110 more rows
+\end{verbatim}
+
+\begin{longtable}[]{@{}rllrrr@{}}
+\toprule\noalign{}
+times & lu.from & lu.to & alloc & target & pct\_err \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+2025 & cropland & newforest & 4813.71448 & 4813.71448 & 0 \\
+2025 & cropland & otherland & 11889.24043 & 11889.24043 & 0 \\
+2025 & cropland & pasture & 0.00000 & 0.00000 & 0 \\
+2025 & cropland & urban & 540.71799 & 540.71799 & 0 \\
+2025 & forest & cropland & 0.00000 & 0.00000 & 0 \\
+2025 & forest & otherland & 0.00000 & 0.00000 & 0 \\
+2025 & forest & pasture & 0.00000 & 0.00000 & 0 \\
+2025 & forest & urban & 0.00000 & 0.00000 & 0 \\
+2025 & otherland & cropland & 0.00000 & 0.00000 & 0 \\
+2025 & otherland & newforest & 1379.43350 & 1379.43350 & 0 \\
+2025 & otherland & pasture & 0.00000 & 0.00000 & 0 \\
+2025 & otherland & urban & 38.62271 & 38.62271 & 0 \\
+2025 & pasture & cropland & 0.00000 & 0.00000 & 0 \\
+2025 & pasture & newforest & 306.85202 & 306.85202 & 0 \\
+2025 & pasture & otherland & 205.96347 & 205.96347 & 0 \\
+2025 & pasture & urban & 154.49085 & 154.49085 & 0 \\
+2025 & urban & cropland & 0.00000 & 0.00000 & 0 \\
+2025 & urban & newforest & 0.00000 & 0.00000 & 0 \\
+2025 & urban & otherland & 0.00000 & 0.00000 & 0 \\
+2025 & urban & pasture & 0.00000 & 0.00000 & 0 \\
+2030 & cropland & newforest & 4813.71448 & 4813.71448 & 0 \\
+2030 & cropland & otherland & 0.00000 & 0.00000 & 0 \\
+2030 & cropland & pasture & 0.00000 & 0.00000 & 0 \\
+2030 & cropland & urban & 498.13789 & 498.13789 & 0 \\
+2030 & forest & cropland & 0.00000 & 0.00000 & 0 \\
+2030 & forest & otherland & 0.00000 & 0.00000 & 0 \\
+2030 & forest & pasture & 0.00000 & 0.00000 & 0 \\
+2030 & forest & urban & 0.00000 & 0.00000 & 0 \\
+2030 & otherland & cropland & 4659.80619 & 4659.80619 & 0 \\
+2030 & otherland & newforest & 1379.43350 & 1379.43350 & 0 \\
+2030 & otherland & pasture & 0.00000 & 0.00000 & 0 \\
+2030 & otherland & urban & 35.58128 & 35.58128 & 0 \\
+2030 & pasture & cropland & 222.09747 & 222.09747 & 0 \\
+2030 & pasture & newforest & 306.85202 & 306.85202 & 0 \\
+2030 & pasture & otherland & 222.09747 & 222.09747 & 0 \\
+2030 & pasture & urban & 142.32511 & 142.32511 & 0 \\
+2030 & urban & cropland & 0.00000 & 0.00000 & 0 \\
+2030 & urban & newforest & 0.00000 & 0.00000 & 0 \\
+2030 & urban & otherland & 0.00000 & 0.00000 & 0 \\
+2030 & urban & pasture & 0.00000 & 0.00000 & 0 \\
+2035 & cropland & newforest & 4813.71448 & 4813.71448 & 0 \\
+2035 & cropland & otherland & 1740.12245 & 1740.12245 & 0 \\
+2035 & cropland & pasture & 0.00000 & 0.00000 & 0 \\
+2035 & cropland & urban & 438.42608 & 438.42608 & 0 \\
+2035 & forest & cropland & 0.00000 & 0.00000 & 0 \\
+2035 & forest & otherland & 0.00000 & 0.00000 & 0 \\
+2035 & forest & pasture & 0.00000 & 0.00000 & 0 \\
+2035 & forest & urban & 0.00000 & 0.00000 & 0 \\
+2035 & otherland & cropland & 0.00000 & 0.00000 & 0 \\
+2035 & otherland & newforest & 1379.43350 & 1379.43350 & 0 \\
+2035 & otherland & pasture & 0.00000 & 0.00000 & 0 \\
+2035 & otherland & urban & 31.31615 & 31.31615 & 0 \\
+2035 & pasture & cropland & 0.00000 & 0.00000 & 0 \\
+2035 & pasture & newforest & 306.85202 & 306.85202 & 0 \\
+2035 & pasture & otherland & 65.13109 & 65.13109 & 0 \\
+2035 & pasture & urban & 125.26459 & 125.26459 & 0 \\
+2035 & urban & cropland & 0.00000 & 0.00000 & 0 \\
+2035 & urban & newforest & 0.00000 & 0.00000 & 0 \\
+2035 & urban & otherland & 0.00000 & 0.00000 & 0 \\
+2035 & urban & pasture & 0.00000 & 0.00000 & 0 \\
+2040 & cropland & newforest & 4813.71448 & 4813.71448 & 0 \\
+2040 & cropland & otherland & 805.78909 & 805.78909 & 0 \\
+2040 & cropland & pasture & 0.00000 & 0.00000 & 0 \\
+2040 & cropland & urban & 394.25925 & 394.25925 & 0 \\
+2040 & forest & cropland & 0.00000 & 0.00000 & 0 \\
+2040 & forest & otherland & 0.00000 & 0.00000 & 0 \\
+2040 & forest & pasture & 0.00000 & 0.00000 & 0 \\
+2040 & forest & urban & 0.00000 & 0.00000 & 0 \\
+2040 & otherland & cropland & 0.00000 & 0.00000 & 0 \\
+2040 & otherland & newforest & 1379.43350 & 1379.43350 & 0 \\
+2040 & otherland & pasture & 0.00000 & 0.00000 & 0 \\
+2040 & otherland & urban & 28.16137 & 28.16137 & 0 \\
+2040 & pasture & cropland & 0.00000 & 0.00000 & 0 \\
+2040 & pasture & newforest & 306.85202 & 306.85202 & 0 \\
+2040 & pasture & otherland & 153.24998 & 153.24998 & 0 \\
+2040 & pasture & urban & 112.64550 & 112.64550 & 0 \\
+2040 & urban & cropland & 0.00000 & 0.00000 & 0 \\
+2040 & urban & newforest & 0.00000 & 0.00000 & 0 \\
+2040 & urban & otherland & 0.00000 & 0.00000 & 0 \\
+2040 & urban & pasture & 0.00000 & 0.00000 & 0 \\
+2045 & cropland & newforest & 0.00000 & 0.00000 & 0 \\
+2045 & cropland & otherland & 5552.70443 & 5552.70443 & 0 \\
+2045 & cropland & pasture & 0.00000 & 0.00000 & 0 \\
+2045 & cropland & urban & 343.01866 & 343.01866 & 0 \\
+2045 & forest & cropland & 0.00000 & 0.00000 & 0 \\
+2045 & forest & otherland & 0.00000 & 0.00000 & 0 \\
+2045 & forest & pasture & 0.00000 & 0.00000 & 0 \\
+2045 & forest & urban & 0.00000 & 0.00000 & 0 \\
+2045 & otherland & cropland & 0.00000 & 0.00000 & 0 \\
+2045 & otherland & newforest & 0.00000 & 0.00000 & 0 \\
+2045 & otherland & pasture & 0.00000 & 0.00000 & 0 \\
+2045 & otherland & urban & 24.50133 & 24.50133 & 0 \\
+2045 & pasture & cropland & 0.00000 & 0.00000 & 0 \\
+2045 & pasture & newforest & 0.00000 & 0.00000 & 0 \\
+2045 & pasture & otherland & 544.70511 & 544.70511 & 0 \\
+2045 & pasture & urban & 98.00533 & 98.00533 & 0 \\
+2045 & urban & cropland & 0.00000 & 0.00000 & 0 \\
+2045 & urban & newforest & 0.00000 & 0.00000 & 0 \\
+2045 & urban & otherland & 0.00000 & 0.00000 & 0 \\
+2045 & urban & pasture & 0.00000 & 0.00000 & 0 \\
+2050 & cropland & newforest & 0.00000 & 0.00000 & 0 \\
+2050 & cropland & otherland & 5542.86060 & 5542.86060 & 0 \\
+2050 & cropland & pasture & 0.00000 & 0.00000 & 0 \\
+2050 & cropland & urban & 298.43704 & 298.43704 & 0 \\
+2050 & forest & cropland & 0.00000 & 0.00000 & 0 \\
+2050 & forest & otherland & 0.00000 & 0.00000 & 0 \\
+2050 & forest & pasture & 0.00000 & 0.00000 & 0 \\
+2050 & forest & urban & 0.00000 & 0.00000 & 0 \\
+2050 & otherland & cropland & 0.00000 & 0.00000 & 0 \\
+2050 & otherland & newforest & 0.00000 & 0.00000 & 0 \\
+2050 & otherland & pasture & 0.00000 & 0.00000 & 0 \\
+2050 & otherland & urban & 21.31693 & 21.31693 & 0 \\
+2050 & pasture & cropland & 0.00000 & 0.00000 & 0 \\
+2050 & pasture & newforest & 0.00000 & 0.00000 & 0 \\
+2050 & pasture & otherland & 524.97274 & 524.97274 & 0 \\
+2050 & pasture & urban & 85.26772 & 85.26772 & 0 \\
+2050 & urban & cropland & 0.00000 & 0.00000 & 0 \\
+2050 & urban & newforest & 0.00000 & 0.00000 & 0 \\
+2050 & urban & otherland & 0.00000 & 0.00000 & 0 \\
+2050 & urban & pasture & 0.00000 & 0.00000 & 0 \\
+\end{longtable}
+
+\section{Land-use map}\label{land-use-map}
+
+\begin{center}\includegraphics[width=1\linewidth]{C:\Users\Clara DOUZAL\Documents\Github Desktop\DownscalingFABLE\Output\IND\251008_162458_IND_GlobalSustainability_Downscaling_report_files/figure-latex/unnamed-chunk-3-1} \end{center}
+
+\section{Land-use change map}\label{land-use-change-map}
+
+\begin{center}\includegraphics[width=1\linewidth]{C:\Users\Clara DOUZAL\Documents\Github Desktop\DownscalingFABLE\Output\IND\251008_162458_IND_GlobalSustainability_Downscaling_report_files/figure-latex/unnamed-chunk-4-1} \end{center}
+
+\begin{verbatim}
+## pdf 
+##   2
+\end{verbatim}
+
+\begin{center}\includegraphics{C:\Users\Clara DOUZAL\Documents\Github Desktop\DownscalingFABLE\Output\IND\251008_162458_IND_GlobalSustainability_Downscaling_report_files/figure-latex/2020 map-1} \end{center}
+
+\subsection{Priors check}\label{priors-check}
+
+\subsubsection{Standardized
+coefficients}\label{standardized-coefficients}
+
+\begin{longtable}[]{@{}lrr@{}}
+\toprule\noalign{}
+ks & max\_abs\_beta & l2\_beta \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+urban & 0.8709066 & 1.2617674 \\
+cropland & 0.5218314 & 0.8652989 \\
+forest & 0.5295185 & 0.7309471 \\
+pasture & 0.4299542 & 0.4796998 \\
+ForestRegWithHuman & 0.2723931 & 0.4037499 \\
+Agroforestry & 0.2164291 & 0.3512772 \\
+otherland & 0.1988061 & 0.2743392 \\
+sorghum & 0.1323669 & 0.2360240 \\
+foddercrops & 0.1200290 & 0.2134933 \\
+sunflower & 0.0982814 & 0.1357037 \\
+barley & 0.0798090 & 0.1311714 \\
+log\_pop & 0.0809258 & 0.1289855 \\
+ForestRegNoHuman & 0.0875958 & 0.1261869 \\
+zone3 & 0.0752033 & 0.1189132 \\
+cotton & 0.0788298 & 0.1173615 \\
+\end{longtable}
+
+\subsubsection{Average Marginal Effects (AMEs) on
+probabilities}\label{average-marginal-effects-ames-on-probabilities}
+
+\begin{verbatim}
+##                                    ks     l1_ame
+## urban                           urban 0.35892298
+## forest                         forest 0.22699373
+## cropland                     cropland 0.18839128
+## pasture                       pasture 0.13247630
+## ForestRegWithHuman ForestRegWithHuman 0.12874978
+## Agroforestry             Agroforestry 0.11644093
+## otherland                   otherland 0.08898694
+## sorghum                       sorghum 0.05162623
+## foddercrops               foddercrops 0.04655822
+## ForestRegNoHuman     ForestRegNoHuman 0.04196251
+## zone3                           zone3 0.03884017
+## log_pop                       log_pop 0.02928440
+## barley                         barley 0.02858476
+## sunflower                   sunflower 0.02855326
+## vegetables                 vegetables 0.02850929
+\end{verbatim}
+
+\subsubsection{Permutation importance on
+priors}\label{permutation-importance-on-priors}
+
+\end{document}
