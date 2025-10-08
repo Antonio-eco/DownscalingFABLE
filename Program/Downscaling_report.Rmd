@@ -3,14 +3,23 @@ title: "Downscaling"
 author: "Clara Douzal"
 date: "2023-10-24"
 output: pdf_document
+header-includes:
+  - \DeclareUnicodeCharacter{2061}{}
+  - \DeclareUnicodeCharacter{2212}{}
 params:
-  variable1 : country
-  variable2 : pathway 
+  country : "IND"
+  pathway : "GlobalSustainability"
+  mnl_niter : 100
+  mnl_nburn : 50
+  seed : 1212
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align = "center", dpi = 150)
+
 ```
+
+
 
 ```{r libraries, include = FALSE}
 library(geojsonio)
@@ -22,24 +31,36 @@ library(downscalr)
 library(stringr)
 #library(kableExtra)
 library(knitr)
+library(readr)
+
+if (requireNamespace("conflicted", quietly = TRUE)) {
+  conflicted::conflict_prefer("filter", "dplyr", quiet = TRUE)
+  conflicted::conflict_prefer("select", "dplyr", quiet = TRUE)
+  conflicted::conflict_prefer("lag", "dplyr", quiet = TRUE)
+  conflicted::conflict_prefer("rename", "dplyr", quiet = TRUE)
+  conflicted::conflict_prefer("left_join", "dplyr", quiet = TRUE)
+}
 ```
 
+```{r setting paths, include = FALSE}
+set.seed(params$seed)
+country <- params$country
+pathway <- params$pathway
+niter <- params$mnl_niter
+nburn <- params$mnl_nburn
 
-```{r temporary settings, include = FALSE}
-#Please ensure that you have a folder named like the country variable you will input below in your "Output" folder. This is where your maps will be saved.
-
-country = "IND"
-#pathway = "CurrentTrends"
-#pathway = "NationalCommitments"
-pathway = "GlobalSustainability"
+dir.create(here("Output", country), showWarnings = FALSE, recursive = TRUE)
+stamp <- format(Sys.Date(), "%y%m%d")
+tag <- paste(stamp, country, pathway, sep = "_")
 
 ```
+
 
 This report is generated for **`r country`** for the pathway **`r pathway`**.
 
 # Checking input data
 
-```{r data load, include=FALSE}
+```{r data load, include=FALSE, cache = TRUE}
 
 #Loading all the country specific data downloaded from Earth engine
 
@@ -68,6 +89,11 @@ LandCoverChange <- geojson_read(here("Data", country, "LandCoverChangeHILDA2015_
 LandCoverChange.df <- LandCoverChange@data %>% 
    select(-id)
 
+OldLandCoverChange <- geojson_read(here("Data", country, "OLD GRID","LandCoverChangeHILDA2015_2019.geojson"),  what = "sp")
+OldLandCoverChange.df <- OldLandCoverChange@data %>% 
+   select(-id)
+
+
 ForestManagement <- geojson_read(here("Data", country, "ForestManagement.geojson"),  what = "sp")
 ForestManagement.df <- ForestManagement@data %>% 
   select(-id)
@@ -79,7 +105,23 @@ altitude.df <- altitude@data %>%
 slope <- geojson_read(here("Data", country, "Slope.geojson"),  what = "sp")
 slope.df <- slope@data %>% 
   select(-id)
-  
+
+gaez <- geojson_read(here("Data", country, "GAEZCropDistribution2015.geojson"),  what = "sp")
+gaez.df <- gaez@data  %>% 
+  select(-id) %>% 
+  select(-total)
+
+livestock <- geojson_read(here("Data", country, "GLW4WorldGriddedLivestock2020.geojson"),  what = "sp")
+livestock.df <- livestock@data  %>% 
+  select(-id) %>% 
+  select(-alllivestock)
+
+#Loading the 50km grid with
+grid <- read_csv(here("Data", "global", "grid50_equal_area.csv")) %>% 
+  filter(iso3 == country)
+
+zones <- grid %>% 
+  select(id_c, thermal, zone, BIOME_NAME)
 
 #mapping
 
@@ -121,21 +163,11 @@ kable(
 )
 ```
 
-```{r create raster for maps, include = FALSE}
-#raster to use for plots
-ext <- extent(Travel)
-res <- 0.5
-raster_layer <- raster(ext, res = res)
-rasterized_layer <- rasterize(Travel, raster_layer, field = "id")
-```
 
 ## Checking the land cover change input data
 
-Check in the table below that all land cover of interest and all possible transitions are included in the land transition matrix.
+Check in the table below that all land cover of interest and all possible transitions are included in the land transition matrix. With "missing_from" you can see the number of land transitions thatare missing because of a missing initial land cover. With "missing_to" you can see the number of land transitions that are missing because of a missing final land cover.
 
--   The structure of the matrix should be such that you have the same rownames and colnames. Check that you have all land covers, by default it should be cropland, forest, new forest, otherland, pasture and urban.
-
--   The matrix should be filled with the same number in each cell (i.e. the number of pixels for your country's grid representation in 50km x 50km)
 
 ```{r changing LandCoverChange data structure , echo = FALSE, message = FALSE}
 #value is the percentage of the cell that is going from land cover to another
@@ -187,8 +219,24 @@ country_luc <- LandCoverChange.df %>%
                    Ts = 2015,
                    value = 0)) 
 
-table(country_luc$lu.from, country_luc$lu.to)
+# table(country_luc$lu.from, country_luc$lu.to)
   
+expected <- c("cropland","forest","newforest","otherland","pasture","urban")
+present_from <- sort(unique(country_luc$lu.from))
+present_to   <- sort(unique(country_luc$lu.to))
+data.frame(kind = c("missing_from","missing_to"),
+           value = I(list(setdiff(expected, present_from),
+                         setdiff(expected, present_to)))) %>% knitr::kable()
+```
+
+If any land transitions are missing you can check the table below.
+
+-   The structure of the matrix should be such that you have the same rownames and colnames. Check that you have all land covers, by default it should be cropland, forest, new forest, otherland, pasture and urban.
+
+-   The matrix should be filled with the same number in each cell (i.e. the number of pixels for your country's grid representation in 50km x 50km)
+
+```{r , echo = FALSE, message = FALSE}
+table(country_luc$lu.from, country_luc$lu.to) %>% knitr::kable()
 ```
 
 # Harmonizing start map with FABLE Calculator baseline map
@@ -208,7 +256,7 @@ start_map <- LandCover.df %>%
   filter(!LandCover %in% c("ocean", "water")) %>%
   # Group by id_c and LandCover, summarizing the total area per cover class
   group_by(id_c, LandCover) %>%
-  #this is in km2 so I divide by 10 to get in 1000 ha
+  #this is in km2 so I divide by 10 to get in 1000 ha - 1 km² = 0.1 thousand ha
   summarise(value = sum(AreaPerCover, na.rm = TRUE)/10, .groups = 'drop') %>%
   # Rename columns for clarity
   rename(ns = id_c, lu.from = LandCover) %>%
@@ -262,7 +310,7 @@ CLC_FABLE_shares <- LUC_targets %>%
   pivot_longer(cols = !c(lu.from), names_to = "lu.to", values_to = "proj_share")
 
 # Apply the transition shares to the high-resolution start map for downscaling
-start_map_reproj <- left_join(start_map, CLC_FABLE_shares) %>% 
+start_map_reproj <- left_join(start_map, CLC_FABLE_shares, relationship = "many-to-many") %>% 
   mutate(value = ifelse(!is.na(lu.to), value * proj_share, value), # Adjust values based on shares
          lu.to = ifelse(is.na(lu.to), lu.from, lu.to)) %>% # Update land use type
   group_by(ns, lu.to) %>% 
@@ -271,6 +319,38 @@ start_map_reproj <- left_join(start_map, CLC_FABLE_shares) %>%
   drop_na() %>% # Remove rows with NA values
   rename(lu.from = "lu.to") # Rename for consistency
 
+
+```
+
+```{r create a stable ID map, include = FALSE}
+
+# === build a master ID map (character id -> integer code) ===
+# start_map already has ns (from id_c)
+ns_map <- start_map %>%
+  dplyr::distinct(ns) %>%
+  dplyr::mutate(ns = as.character(ns)) %>%
+  dplyr::arrange(ns) %>%
+  dplyr::mutate(ns_int = dplyr::row_number(),
+                id_c   = ns)  # convenience column for joining to sp@data$id_c
+
+# sanity: no duplicates
+stopifnot(!anyDuplicated(ns_map$ns))
+
+# === rasterize *now* (doesn't need results yet) ===
+# make sure Travel has id_c and same CRS
+Travel@data <- Travel@data %>%
+  dplyr::mutate(id_c = as.character(id_c)) %>%
+  dplyr::left_join(ns_map, by = "id_c")
+
+# fail fast if some polygons aren't in the map
+if (anyNA(Travel@data$ns_int)) {
+  missing <- unique(Travel@data$id_c[is.na(Travel@data$ns_int)])
+  stop(sprintf("Travel polygons not found in ns_map (n=%d). Example: %s",
+               length(missing), paste(head(missing, 5), collapse=", ")))
+}
+
+raster_layer <- raster::raster(raster::extent(Travel), res = 0.5, crs = raster::crs(Travel))
+rasterized_layer <- raster::rasterize(Travel, raster_layer, field = "ns_int")
 
 ```
 # Checking FABLE land use change projections to downscale
@@ -302,7 +382,9 @@ FABLE <- readxl::read_excel(here("Data", country, "FABLE.xlsx"), sheet = pathway
   select(times, lu.from, lu.to, value) %>%
   filter(lu.from != lu.to)
   
-table(FABLE$lu.from, FABLE$lu.to)
+table(FABLE$lu.from, FABLE$lu.to) %>% knitr::kable()
+
+
 
 ```
 
@@ -330,171 +412,434 @@ Xmat_ForestManagement <- ForestManagement.df %>%
 
 #Mean Travel time
 Xmat_Travel <- Travel.df %>% select(id_c, MeanTravelTime) %>% 
-  mutate(log_MeanTravelTime = log(MeanTravelTime)) %>% 
-  select(-MeanTravelTime)
-#summary(Xmat_Travel)
+  transmute(id_c, log_MeanTravelTime = log1p(MeanTravelTime)) 
+
 
 #Population  
 Xmat_pop <- population.df %>% select(id_c, TotalPop) %>% 
-  mutate(log_pop = log(TotalPop)) %>% 
-  select(-TotalPop)
-#summary(Xmat_pop)  
+  transmute(id_c, log_pop = log1p(TotalPop)) 
+ 
   
 #Altitude  
 Xmat_alt <- altitude.df %>% select(id_c, MeanAltitude) %>% 
-  mutate(log_altitude = log(MeanAltitude)) %>% 
-  select(-MeanAltitude)
+  transmute(id_c, log_altitude = log1p(MeanAltitude))
 
-mode_thermal <- slope.df %>%
-    select(id_c, thermal) %>%
-    group_by(thermal) %>%          # Group by the "thermal" column
-    summarize(count = n()) %>%     # Count the occurrences of each unique value in "thermal"
-    arrange(desc(count)) %>%       # Sort by the count in descending order
-    slice(1)    
-
-mode_zone <- slope.df %>%
-    select(id_c, zone) %>%
-    group_by(zone) %>%          # Group by the "thermal" column
-    summarize(count = n()) %>%     # Count the occurrences of each unique value in "thermal"
-    arrange(desc(count)) %>%       # Sort by the count in descending order
-    slice(1)    
-
-#Slope and data from GAEZ on zone and thermal 
 Xmat_slope <- slope.df %>%
-  select(id_c, MeanSlope, thermal, zone) %>%
-  # Create binary columns for each thermal category
-  pivot_wider(id_cols = c(id_c, MeanSlope), 
-              names_from = thermal, 
-              values_from = thermal, 
-              names_prefix = "thermal_", 
-              values_fn = list(thermal = ~ 1), 
-              values_fill = list(thermal = 0)) %>%
-  # Retain MeanSlope before the second pivot for zone
-  left_join(
-    slope.df %>%
-      select(id_c, zone) %>%
-      pivot_wider(id_cols = id_c, 
-                  names_from = zone, 
-                  values_from = zone, 
-                  names_prefix = "zone_", 
-                  values_fn = list(zone = ~ 1), 
-                  values_fill = list(zone = 0)), 
-    by = "id_c"
+  dplyr::transmute(
+    id_c     = as.character(id_c),
+    log_slope = log1p(MeanSlope))
+
+Xmat_zones <- zones %>% 
+  dplyr::transmute(
+    id_c     = as.character(id_c),
+    thermal  = forcats::fct_explicit_na(as.factor(thermal), na_level = "UNK"),
+    zone     = forcats::fct_explicit_na(as.factor(zone),    na_level = "UNK")
   ) %>%
-  mutate(log_slope = log(MeanSlope)) %>%
-  select(-c(MeanSlope, 
-            paste("thermal", mode_thermal$thermal, sep = "_"),
-            paste("zone", mode_zone$zone, sep = "_")))
-  
+  { 
+    MM <- model.matrix(~ thermal + zone, data = .)   # has (Intercept) + k-1 dummies
+    MM <- MM[, setdiff(colnames(MM), "(Intercept)"), drop = FALSE]  # drop intercept
+    cbind(id_c = .$id_c, as.data.frame(MM))
+  } %>%
+  tibble::as_tibble() %>%
+  # full coverage of pixels
+  #dplyr::right_join(tibble::tibble(id_c = all_ns), by = "id_c") %>%
+  dplyr::mutate(
+    dplyr::across(dplyr::starts_with("thermal"), ~ tidyr::replace_na(.x, 0)),
+    dplyr::across(dplyr::starts_with("zone"),    ~ tidyr::replace_na(.x, 0))
+  )
 
+Xmat_gaez <- gaez.df %>% 
+  mutate(id_c     = as.character(id_c)) %>%
+  #drop columns that are all zeros
+  select(
+    any_of("id_c"),                               # keep id_c if present
+    where(~ !is.numeric(.x) || any(abs(.x) > 1e-9, na.rm = TRUE))  # keep non-numeric OR has any non-zero
+  )
 
-Xmat <- Xmat_LU %>% 
-  #select(-forest_share) %>% 
-  mutate(Intercept = 1) %>% 
-  left_join(Xmat_Travel) %>% 
-  left_join(Xmat_pop) %>% 
-  left_join(Xmat_ForestManagement) %>% 
-  left_join(Xmat_alt) %>% 
-  left_join(Xmat_slope) %>% 
- # select(-c(cropland, otherland, urban, pasture, forest)) %>% #, SRP_share)) %>% 
-  #pivot back longer to fit the DownscalR package structure
-  pivot_longer(-id_c, values_to = "value", names_to = "ks") %>% 
+# see which columns were dropped
+# dropped_cols <- setdiff(names(gaez.df), names(Xmat_gaez))
+# print(dropped_cols)
+
+Xmat_livestock <- livestock.df %>% 
+  mutate(id_c     = as.character(id_c)) %>% 
+  #drop columns that are all zeros
+  select(
+    any_of("id_c"),                               # keep id_c if present
+    where(~ !is.numeric(.x) || any(abs(.x) > 1e-9, na.rm = TRUE))  # keep non-numeric OR has any non-zero
+  )
+# see which columns were dropped
+# dropped_cols <- setdiff(names(livestock.df), names(Xmat_livestock))
+# print(dropped_cols)
+
+Xmat <- Xmat_LU %>%
+  mutate(Intercept = 1) %>%
+  left_join(Xmat_Travel,           by = "id_c") %>%
+  left_join(Xmat_pop,              by = "id_c") %>%
+  left_join(Xmat_ForestManagement, by = "id_c") %>%
+  left_join(Xmat_alt,              by = "id_c") %>%
+  left_join(Xmat_slope,            by = "id_c") %>%
+  left_join(Xmat_zones,            by = "id_c") %>% 
+  left_join(Xmat_gaez,             by = "id_c") %>% 
+  left_join(Xmat_livestock,        by = "id_c") %>% 
+  pivot_longer(-id_c, names_to = "ks", values_to = "value") %>%
   rename(ns = id_c)
+
 
 ```
 
+We cannot keep the cells that have NAs for some variables that will be used as priors.
 
 ```{r create df used for priors relative to the country, echo = FALSE, message=FALSE}
 #find where I have NAs in the Xmat matrix to remove those cells else the MNL cannot run
-rm_na <- Xmat$ns[which(is.na(Xmat), arr.ind = T)[,1]]
+# rm_na <- Xmat$ns[which(is.na(Xmat), arr.ind = T)[,1]]
+# 
+# country_df <- list(xmat = tibble(Xmat %>% 
+#                                    filter(!(ns %in% rm_na))), 
+#                    lu_levels = tibble(start_map_reproj %>% 
+#                                         filter(!(ns %in% rm_na))))
 
-country_df <- list(xmat = tibble(Xmat %>% 
-                                   filter(!(ns %in% rm_na))), 
-                   lu_levels = tibble(start_map_reproj %>% 
-                                        filter(!(ns %in% rm_na))))
+# After you build Xmat (long: ns, ks, value)
+na_by_var <- Xmat %>%
+  group_by(ks) %>%
+  summarise(n_na = sum(is.na(value)), .groups="drop") %>%
+  arrange(desc(n_na))
+
+na_by_ns <- Xmat %>%
+  group_by(ns) %>%
+  summarise(n_na = sum(is.na(value)), .groups="drop") %>%
+  arrange(desc(n_na))
+
+head(na_by_var, 40) %>% knitr::kable()# which variables have NAs?
+head(na_by_ns, 20) %>% knitr::kable()   # which cells have most NAs?
+
+
+good_ns <- Xmat %>% 
+  group_by(ns) %>% 
+  summarise(ok = all(!is.na(value))) %>% 
+  filter(ok) %>%
+  pull(ns)
+
+# Which cells were removed?
+all_ns <- sort(unique(Xmat$ns))
+removed_ns <- setdiff(all_ns, good_ns)
+
+removal_msg <- if (length(removed_ns) == 0) {
+  sprintf("**No grid cells were removed**: all %d cells have complete covariates.", length(all_ns))
+} else {
+  ids <- paste(head(removed_ns, 20), collapse = ", ")
+  extra <- if (length(removed_ns) > 20) " ..." else ""
+  sprintf("**%d grid cell(s) were removed** due to missing covariates. Removed cell IDs (showing up to 20): %s%s",
+          length(removed_ns), ids, extra)
+}
+
+country_df <- list(
+  xmat = Xmat %>% filter(ns %in% good_ns),
+  lu_levels = start_map_reproj %>% filter(ns %in% good_ns)
+)
+
+
+saveRDS(country_df, here("Output", country, paste0(tag, "_countrydf.rds")))
 ```
-
+`r removal_msg`
 
 # Estimate MNL model
 
-```{r prep data, echo = FALSE, message=FALSE, include = FALSE}
+
+```{r prep data, echo = FALSE, message=FALSE, include = FALSE, cache = TRUE}
+Yraw <- country_luc %>% 
+  filter(ns %in% good_ns) #%>% 
+  # filter(!(lu.to %in% c("not relevant", "water", "forest"))) %>% 
+  # filter(!(lu.from %in% c("newforest", "urban", "not relevant")))
+
+# 1) ONE global wide X for modeling (all cells, all ks)
+X_wide <- country_df$xmat %>%
+  tidyr::pivot_wider(names_from = "ks", values_from = "value", values_fill = 0) %>%
+  dplyr::arrange(ns) %>%
+  tibble::column_to_rownames(var = "ns")
+
+# Optional safety check: no NAs
+stopifnot(!any(is.na(X_wide)))
 
 results_MNL <- data.frame()
 pred_coeff_long <- data.frame()
 country_start_areas <- data.frame()
-X_long <- data.frame()
 
-Yraw <- country_luc %>% 
-  filter(!(ns %in% rm_na))
+for (cur_LU.from in c("urban","cropland","pasture","forest","otherland","newforest")) {
 
-for(cur_LU.from in c("urban", "cropland", "pasture", "forest", "otherland", "newforest")){
-  
- Y <- dplyr::filter(Yraw,lu.from == cur_LU.from & Ts == 2015) %>% #changes 2018 to 2019
-  tidyr::pivot_wider(names_from = lu.to) %>%
-  tibble::column_to_rownames(var = "ns") %>%
-  dplyr::select(-c(lu.from, Ts))
- 
- X <- country_df$xmat %>% 
-    tidyr::pivot_wider(names_from = "ks") %>%
-    dplyr::arrange(match(ns,Y$ns)) %>%
-    tibble::column_to_rownames(var = "ns") 
-  
+  Y <- dplyr::filter(Yraw, lu.from == cur_LU.from & Ts == 2015) %>%
+    tidyr::pivot_wider(names_from = lu.to, values_from = value, values_fill = 0) %>%
+    tibble::column_to_rownames(var = "ns") %>%
+    dplyr::select(-lu.from, -Ts)
+
+  # 2) Subset *rows only* from the global X_wide to match Y's ns
+  X <- X_wide[rownames(Y), , drop = FALSE]
+
   baseline <- which(colnames(Y) == cur_LU.from)
 
-  # Decreased niter = 100 and nburn = 50 for faster computation 
-  temp_results_MNL <- mnlogit(as.matrix(X), as.matrix(Y), baseline, niter = 100, nburn = 50, A0 = 10^4)
-  
-  pred_coeff <- as.data.frame(apply(temp_results_MNL$postb[,-baseline,],c(1,2),mean))
-  
-  pred_coeff_long <- pred_coeff_long %>%
-    rbind(
-    pred_coeff %>% tibble::rownames_to_column(var="ks") %>%
-  tidyr::pivot_longer(!ks, names_to = "lu.to", values_to="value") %>%
-  dplyr::arrange(lu.to) %>%
-  tibble::add_column(lu.from=cur_LU.from, .after="ks")
-    )
-  
-  ## starting area should provide information on area of each (higher resolution) grid cell, i.e ns
-country_start_areas <- country_start_areas %>%
-  rbind(
-    dplyr::filter(country_df$lu_levels, lu.from == cur_LU.from) %>% mutate(times = 2020)
-  )
+  temp_results_MNL <- mnlogit(as.matrix(X),
+                              as.matrix(Y),
+                              baseline,
+                              niter = niter, nburn = nburn, A0 = 1e4)
 
+  pred_coeff <- as.data.frame(apply(temp_results_MNL$postb[,-baseline,], c(1,2), mean))
+
+  pred_coeff_long <- pred_coeff_long %>%
+    dplyr::bind_rows(
+      pred_coeff %>%
+        tibble::rownames_to_column(var = "ks") %>%
+        tidyr::pivot_longer(!ks, names_to = "lu.to", values_to = "value") %>%
+        dplyr::arrange(lu.to) %>%
+        tibble::add_column(lu.from = cur_LU.from, .after = "ks")
+    )
+
+  country_start_areas <- country_start_areas %>%
+    dplyr::bind_rows(
+      dplyr::filter(country_df$lu_levels, lu.from == cur_LU.from) %>%
+        dplyr::mutate(times = 2020)
+    )
 }
-```
+
+# 3) TRUE fix: X_long must come from the full, long xmat (NOT from X)
+X_long <- country_df$xmat %>%
+  dplyr::arrange(ns, ks)
+
+# Optional safety: ensure ks in betas and X_long line up
+stopifnot(all(unique(pred_coeff_long$ks) %in% unique(X_long$ks)))
+stopifnot(all(unique(X_long$ks) %in% unique(pred_coeff_long$ks)))
 
 # Downscaling
+results_DS <- downscale(
+  targets     = FABLE %>% dplyr::filter(times > 2020),
+  start.areas = country_start_areas,
+  xmat        = X_long,
+  betas       = pred_coeff_long
+)
+
+# convert results ns -> ns_int using the same map
+results_DS_num <- results_DS
+results_DS_num$out.res <- results_DS$out.res %>%
+  dplyr::mutate(ns = as.character(ns)) %>%
+  dplyr::left_join(ns_map %>% dplyr::select(ns, ns_int), by = "ns") %>%
+  dplyr::mutate(ns = ns_int) %>%
+  dplyr::select(-ns_int)
+
+stopifnot(!anyNA(results_DS_num$out.res$ns))
+
+downscaled_LUC <- results_DS_num$out.res
+
+```
+
+
+# Downscaling - diagnostics & quality indicators
 
 ```{r restriction data, echo = FALSE, message=FALSE}
 
+### code to use when ready to add constraints ####
+
 ## Protected areas
 
+# Build a long mask of allowed = 0/1 per (ns, lu.to)
+# Example: forbid cropland expansion inside ProtectedAreas
+# pa_cells <- ProtectedAreas.df$id_c
+# 
+# restr <- expand.grid(ns = unique(start_map$ns),
+#                      lu.to = c("cropland","forest","newforest","otherland","pasture","urban"),
+#                      stringsAsFactors = FALSE) %>%
+#   mutate(value = 1L) %>%
+#   mutate(value = ifelse(ns %in% pa_cells & lu.to %in% c("cropland","urban","pasture"), 0L, value))
+# 
+# # Option A: If supported, pass to downscale()
+# results_DS <- downscale(
+#   targets = FABLE %>% filter(times > 2020),
+#   start.areas = country_start_areas,
+#   xmat = X_long,
+#   betas = pred_coeff_long,
+#   restriction = restr   # <-- if the API supports it
+# )
+# 
+# saveRDS(results_DS, here("Output", country, paste0(tag, "_downscale.rds")))
+# saveRDS(pred_coeff_long, here("Output", country, paste0(tag, "_mnl_betas.rds")))
+
+```
+
+## Aggregate consistency & diagonal zeros
+
+This table compares the downscaled allocation with the national transition targets from the FABLE Calculator for each origin–destination land-use pair and year. For every (lu.from -> lu.to, time) it shows the allocated area, the target area, and a percentage error computed as 100 * (allocated − target) divided by the target (with a very small number added to avoid division by zero). 
+How to interpret the results? Values should be very close to 0%. Systematically positive errors mean the optimizer allocates more than requested; negative errors mean less. Large discrepancies usually signal a mismatch in years, missing transitions in the targets, or binding restrictions that prevent exact matching.
+
+```{r diagnostics & quality indicators - Aggregate consistency & diagonal zeros, echo=FALSE}
+
+# Aggregate allocation vs targets
+alloc_agg <- downscaled_LUC %>%
+  group_by(times, lu.from, lu.to) %>%
+  summarize(alloc = sum(value, na.rm=TRUE), .groups="drop")
+
+targ_agg <- FABLE %>% 
+  filter(times > 2020) %>% 
+  mutate(times = as.character(times)) %>% 
+  group_by(times, lu.from, lu.to) %>%
+  summarize(target = sum(value, na.rm=TRUE), .groups="drop")  
+  
+
+consistency <- full_join(alloc_agg, targ_agg, by = c("times","lu.from","lu.to")) %>%
+  mutate(across(c(alloc,target), ~ replace_na(.x, 0)),
+         pct_err = 100 * (alloc - target) / pmax(abs(target), 1e-9)) %>% 
+  filter(`lu.from` != `lu.to`)
+
+knitr::kable(consistency %>% filter(times >= min(times))) 
+
+
 ```
 
 
 
-```{r, echo = FALSE, message=FALSE, error=FALSE, warning = FALSE}
+## Prior vs allocation alignment
+
+This diagnostic compares the priors implied by the multinomial model (what the econometrics expects) with the actual allocation from the optimization (what downscalR did).
+
+Top-20 percent capture: rank cells by the prior for a given transition and report the fraction of allocated area that falls into the top 20 percent prior cells. 
+How to interpret the results? A random allocation would be about 0.20. Higher is better (for example, 0.50 is good, 0.70 is very strong). Values near 0.20 can mean the priors are flat or that strong constraints overrode them.
+
+Divergence measures: summary numbers such as Kullback–Leibler or Jensen–Shannon divergence quantify how far the allocation distribution is from the prior distribution across cells. 
+How to interpret the results? Lower is better; 0 means perfect agreement.
+
+Rank correlation: a Spearman correlation between prior scores and allocated intensities. Interpretation: above 0.6 is strong monotone agreement; 0.3 to 0.6 is moderate; near 0 is weak.
+
+Note: when priors are intentionally flat (because of limited data), low capture or high divergence does not necessarily indicate an error.
+
+```{r compute true prior probabilities for QA (KL & Top-20 capture), echo = FALSE}
 
 
-X_long <-  X %>% tibble::rownames_to_column(var="ns") %>%
-  tidyr::pivot_longer(!ns, names_to="ks", values_to = "value")
+# ---- Prep (run once after you have country_df, pred_coeff_long, results_DS) ----
+# Wide design matrix aligned to feature names (ks)
+X_wide <- country_df$xmat %>%
+  tidyr::pivot_wider(names_from = "ks", values_from = "value", values_fill = 0) %>%
+  dplyr::arrange(ns)
+X_mat   <- as.matrix(X_wide %>% dplyr::select(-ns))
+features <- colnames(X_mat)
 
-## Downscaling computation and results
+# Destination classes (columns) — from your data
+classes <- sort(unique(country_luc$lu.to))
 
-results_DS <- downscale(targets = FABLE %>% filter(times > 2020), 
-                        start.areas =  country_start_areas, 
-                        xmat = X_long, 
-                        betas = pred_coeff_long)
+# Numerically safe KL
+kl_div <- function(q, p, eps = 1e-12) {
+  q <- pmax(q, eps); p <- pmax(p, eps)
+  sum(q * log(q / p))
+}
 
-downscaled_LUC <- results_DS$out.res
+# Optional: Jensen-Shannon divergence (symmetric, bounded)
+js_div <- function(p, q, eps = 1e-12) {
+  p <- pmax(p, eps); q <- pmax(q, eps)
+  m <- 0.5*(p+q)
+  0.5*kl_div(p, m, eps) + 0.5*kl_div(q, m, eps)
+}
+
+# Reconstruct prior probabilities for an origin class (lu.from)
+prior_probs_for <- function(lu_from) {
+  # Make a (features x classes) coefficient matrix with zeros by default.
+  B <- matrix(0, nrow = length(features), ncol = length(classes),
+              dimnames = list(features, classes))
+  # Fill with estimated betas (long -> scatter into B)
+  cf <- pred_coeff_long %>% dplyr::filter(lu.from == !!lu_from)
+  ii <- match(cf$ks, features)
+  jj <- match(cf$lu.to, classes)
+  keep <- which(!is.na(ii) & !is.na(jj))
+  if (length(keep)) B[cbind(ii[keep], jj[keep])] <- cf$value[keep]
+  # Baseline column (lu_from) remains zeros  - > correct for multinomial logit.
+  LP    <- X_mat %*% B
+  maxr  <- apply(LP, 1, max)            # stabilize softmax
+  expLP <- exp(LP - maxr)
+  probs <- expLP / rowSums(expLP)
+  list(ns = X_wide$ns, classes = classes, probs = probs)
+}
+
+# Compute KL & Top-k capture for one transition and one year
+compute_transition_qc <- function(lu_from, lu_to, year) {
+  pp  <- prior_probs_for(lu_from)
+  j   <- match(lu_to, pp$classes)
+  stopifnot(!is.na(j))
+  p   <- as.numeric(pp$probs[, j])       # prior per cell for (lu_from -> lu_to)
+  # Posterior allocation q from results (that year only)
+  q_tbl <- results_DS$out.res %>%
+    dplyr::filter(times == !!year, lu.from == !!lu_from, lu.to == !!lu_to) %>%
+    dplyr::group_by(ns) %>% dplyr::summarise(area = sum(value), .groups="drop")
+  q <- rep(0, length(pp$ns))
+  q[match(q_tbl$ns, pp$ns)] <- q_tbl$area
+  p <- p / pmax(sum(p), 1e-12)
+  q <- q / pmax(sum(q), 1e-12)
+  # Metrics
+  Dkl <- kl_div(q, p)
+  Jsd <- js_div(p, q)
+  rho <- suppressWarnings(stats::cor(p, q, method = "spearman", use = "complete.obs"))
+  # Top-20/40
+  rk <- rank(-p, ties.method = "average")
+  n  <- length(rk)
+  top_capture <- function(frac) sum(q[rk <= frac*n])
+  data.frame(
+    year = year,
+    lu.from = lu_from,
+    lu.to = lu_to,
+    KL_q_p = Dkl,
+    JSD = Jsd,
+    Spearman = rho,
+    Top20 = top_capture(0.20)
+   
+  )
+}
+
+yrs <- sort(unique(results_DS$out.res$times))
+base_year  <- min(yrs)
+target_yr  <- if (2050 %in% yrs) 2050 else max(yrs)
+
+#full QC table for all transitions in a year
+all_pairs <- expand.grid(
+  lu.from = c("cropland","forest","newforest","otherland","pasture","urban"),
+  lu.to   = c("cropland","forest","newforest","otherland","pasture","urban"),
+  stringsAsFactors = FALSE
+) %>% dplyr::filter(lu.from != lu.to)
+
+qc_table <- purrr::map_dfr(1:nrow(all_pairs), function(i) {
+  with(all_pairs[i,], compute_transition_qc(lu.from, lu.to, target_yr))
+})
+
+knitr::kable(qc_table %>% dplyr::arrange(KL_q_p))
+
+# How to read the numbers (cheat-sheet)
+# 
+# Top20 ~ 0.20 -> Allocation is basically random with respect to the prior.
+# Top20 >= 0.50 -> Strong alignment to prior hotspots.
+# Top20 >= 0.70 -> Very strong; most mass sits where priors said it should.
+# 
+# KL (q||p): 0 means perfect match. There isn’t a universal “good” threshold because it depends on sparsity and number of cells, but:
+# 
+# 0.00–0.10: extremely close to priors
+# 
+# 0.10–0.50: modest deviations
+# 
+# >0.50: sizable deviation; check constraints or priors (may be flat/weak)
+# 
+# JSD (optional): symmetric and bounded in 
+# [0,ln⁡2]
+# [0,ln2] ~ 
+# [0,0.693]
+# [0,0.693]. Interprets like KL (lower is better), but easier to compare across cases.
+# 
+# Spearman: rank agreement between prior and allocation across cells.
+# ~0 means weak monotone relation; >0.4 moderate; >0.6 strong.
+# 
+# Tip: If priors are very flat (little contrast), KL can be small and Top20 near 0.2 even if the map “looks okay”. That’s a prior issue—consider strengthening drivers or adding constraints.
 
 ```
+
+
 
 # Land-use map
 
+
 ```{r, echo = FALSE, message=FALSE, fig.align = "center", fig.width=8, fig.height=8, out.width='100%'}
-LUC_plot <- LUC_plot(results_DS, rasterized_layer)
-plot_to_save <- LUC_plot$LUC.plot +
+# plot with consistent IDs on both sides
+LUC_plot_out <- LUC_plot(results_DS_num, rasterized_layer)
+plot_to_save <- LUC_plot_out$LUC.plot +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
                  panel.background = ggplot2::element_rect(fill = "lightgrey"))
 plot_to_save
@@ -511,7 +856,7 @@ rm(plot_to_save)
 
 ```{r, echo = FALSE, message = FALSE, fig.width=8, fig.height=8, out.width='100%'}
 
-results_DS_LUC <- results_DS
+results_DS_LUC <- results_DS_num
 
 # Create 'gain' and 'loss' datasets
 results_DS_LUC$out.res <- results_DS_LUC$out.res %>%
@@ -537,7 +882,7 @@ results_DS_LUC$out.res <- results_DS_LUC$out.res %>%
 
 #Define plot aesthetics
 color = "PRGn"
-label = "Area gains and losses in ha per pixel"
+label = "Area gains and losses in 1000 ha per pixel"
 
 #Create the transition plot using LUC_plot
 Transition_plot <- LUC_plot(
@@ -573,9 +918,9 @@ dev.off()
 
 ```{r 2020 map, echo = FALSE, message = FALSE}
 
-results_DS_2050 <- results_DS
+results_DS_2050 <- results_DS_num
 results_DS_2050$out.res <- results_DS_2050$out.res %>% 
-  dplyr::filter(times %in% c(2015, 2050))
+  dplyr::filter(times %in% c(2020, 2050))
 
 # Create the land-use change plot for 2050
 LUC_plot_2050 <- LUC_plot(results_DS_2050, rasterized_layer)
@@ -589,5 +934,130 @@ output_file <- here("Output", country, paste0(format(Sys.Date(), "%y%m%d"), "_",
 
 ggplot2::ggsave(filename = output_file, plot = plot_to_save, units = "in", height = 6, width = 10, dpi = 300)
 rm(plot_to_save)
+```
+
+## Priors check
+
+### Standardized coefficients
+```{r}
+# Prep (once): wide X and feature SDs
+X_wide <- country_df$xmat |>
+  tidyr::pivot_wider(names_from = ks, values_from = value, values_fill = 0) |>
+  dplyr::arrange(ns)
+X_mat <- as.matrix(X_wide |> dplyr::select(-ns))
+sd_x  <- apply(X_mat, 2, stats::sd)
+
+classes <- sort(unique(country_luc$lu.to))
+
+std_importance <- function(lu_from) {
+  cf <- pred_coeff_long |> dplyr::filter(lu.from == !!lu_from)
+  cf <- cf |> dplyr::mutate(sd = sd_x[match(ks, names(sd_x))],
+                            beta_std = value * sd)
+  # aggregate importance per feature across destination classes
+  agg <- cf |>
+    dplyr::group_by(ks) |>
+    dplyr::summarise(
+      max_abs_beta_std = max(abs(beta_std), na.rm = TRUE),
+      l2_beta_std = sqrt(sum(beta_std^2, na.rm = TRUE)),
+      .groups = "drop"
+    ) |>
+    dplyr::arrange(dplyr::desc(l2_beta_std))
+  agg
+}
+
+# Example:
+std_importance("otherland") |> head(15)  # top 15 features
+
+```
+
+### Average Marginal Effects (AMEs) on probabilities
+
+```{r}
+# Build coefficient matrix for an origin class (baseline column = origin; zeros)
+coef_matrix_for <- function(lu_from) {
+  B <- matrix(0, nrow = ncol(X_mat), ncol = length(classes),
+              dimnames = list(colnames(X_mat), classes))
+  cf <- pred_coeff_long |> dplyr::filter(lu.from == !!lu_from)
+  ii <- match(cf$ks, rownames(B)); jj <- match(cf$lu.to, colnames(B))
+  keep <- which(!is.na(ii) & !is.na(jj))
+  if (length(keep)) B[cbind(ii[keep], jj[keep])] <- cf$value[keep]
+  B
+}
+
+softmax <- function(M) {
+  # M: N x J linear predictors
+  M <- sweep(M, 1, apply(M, 1, max), FUN = "-")
+  E <- exp(M)
+  E / rowSums(E)
+}
+
+average_marginal_effects <- function(lu_from) {
+  B  <- coef_matrix_for(lu_from)
+  LP <- X_mat %*% B            # N x J
+  P  <- softmax(LP)            # probs
+  # dP/dx for each feature k and dest j, averaged over i
+  ame <- matrix(NA_real_, nrow = ncol(X_mat), ncol = ncol(B),
+                dimnames = list(colnames(X_mat), colnames(B)))
+  for (k in seq_len(ncol(X_mat))) {
+    # term for each destination j at all i: P_ij * (beta_jk - sum_l P_il * beta_lk)
+    beta_k <- B[k, ]                   # length J
+    adj    <- P %*% beta_k             # N x 1
+    dP     <- P * sweep(matrix(beta_k, nrow(P), ncol(P), byrow=TRUE), 1, adj, FUN = "-")
+    ame[k, ] <- colMeans(dP)
+  }
+  ame
+}
+
+# Example: AMEs for one origin
+AME <- average_marginal_effects("otherland")
+# Rank features by overall AME magnitude across destinations
+ame_rank <- data.frame(
+  ks = rownames(AME),
+  l1_ame = rowSums(abs(AME)),    # or l2_ame = sqrt(rowSums(AME^2))
+  stringsAsFactors = FALSE
+) |>
+  dplyr::arrange(dplyr::desc(l1_ame))
+head(ame_rank, 15)
+
+```
+
+### Permutation importance on priors
+
+```{r}
+# Build "observed" training matrix for an origin (your Yraw for Ts=2015)
+build_Ymat <- function(lu_from) {
+  Y <- dplyr::filter(Yraw, lu.from == !!lu_from & Ts == 2015) |>
+    tidyr::pivot_wider(names_from = lu.to, values_from = value, values_fill = 0) |>
+    tibble::column_to_rownames("ns") |>
+    dplyr::select(-lu.from, -Ts)
+  # Align rows with X_wide order; fill missing rows with zeros if needed
+  Y <- Y[match(rownames(X_mat), rownames(Y)), , drop=FALSE]
+  Y[is.na(Y)] <- 0
+  as.matrix(Y)
+}
+
+logloss_prior <- function(lu_from, X = X_mat) {
+  B  <- coef_matrix_for(lu_from)
+  P  <- softmax(X %*% B) + 1e-12
+  Y  <- build_Ymat(lu_from)
+  -sum(Y * log(P))  # cross-entropy
+}
+
+perm_importance <- function(lu_from, features = colnames(X_mat), n_perm = 1) {
+  base <- logloss_prior(lu_from)
+  out <- lapply(features, function(f) {
+    ll_inc <- replicate(n_perm, {
+      Xp <- X_mat
+      Xp[, f] <- sample(Xp[, f])  # permute feature
+      logloss_prior(lu_from, X = Xp) - base
+    })
+    data.frame(ks = f, delta_logloss = mean(ll_inc))
+  })
+  dplyr::arrange(dplyr::bind_rows(out), dplyr::desc(delta_logloss))
+}
+
+# Example: top 15 most important features for origin "otherland"
+#perm_importance("otherland") |> head(15)
+
 ```
 
