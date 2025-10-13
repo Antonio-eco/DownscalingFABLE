@@ -8,7 +8,8 @@ header-includes:
   - \DeclareUnicodeCharacter{2212}{}
 params:
   country : "IND"
-  pathway : "MegaOptimist"
+  pathway : "GlobalSustainability"
+  start_map_source : "HILDA"
   mnl_niter : 100
   mnl_nburn : 50
   seed : 1212
@@ -51,13 +52,18 @@ country <- params$country
 pathway <- params$pathway
 niter   <- params$mnl_niter
 nburn   <- params$mnl_nburn
+start_map_source <- params$start_map_source
 
 dir.create(here("Output", country), showWarnings = FALSE, recursive = TRUE)
 stamp <- format(Sys.Date(), "%y%m%d")
-tag   <- paste(stamp, country, pathway, sep = "_")
+tag   <- paste(stamp, country, pathway, start_map_source, sep = "_")
 
 ```
 
+```{r loading special functions, include = FALSE}
+source(here("Program", "LUC_plot_cum_allLUC.R"))
+```
+ 
 
 This report is generated for **`r country`** for the pathway **`r pathway`**.
 
@@ -82,10 +88,17 @@ Travel <- geojson_read(here("Data", country, "TravelTime.geojson"), what = "sp")
 Travel.df <- Travel@data %>%
   select(-id)
 
+
+if(start_map_source == "HILDA"){
 #this is in km2 
 LandCover <- geojson_read(here("Data", country, "LandCoverHILDA2015.geojson"),  what = "sp")
 LandCover.df <- LandCover@data %>% 
   select(-id)
+} else {
+  LandCover <- geojson_read(here("Data", country, "LandCoverCopernicus2019.geojson"),  what = "sp")
+LandCover.df <- LandCover@data %>% 
+  select(-id)
+} 
 
 #this is in km2
 LandCoverChange <- geojson_read(here("Data", country, "LandCoverChangeHILDA2015_2019.geojson"),  what = "sp")
@@ -137,6 +150,43 @@ map_ForestMgmt <- readxl::read_excel(here("Data/mapping_code.xlsx"),
                                 sheet = "ForestManagement")
 ```
 
+
+```{r restoration maps, include = FALSE}
+
+#mapping
+map_chaturvedi <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
+                                sheet = "Chaturvedi")
+
+#Global tree cover (existing and potential) (%)
+rest_bastin <- geojson_read(here("Data", country, "GlobalTreeRestorationPotential_Bastin.geojson"),  what = "sp")
+rest_bastin.df <- rest_bastin@data  %>% 
+  select(-id) 
+
+#kilograms of CO2 equivalent per year (kgCO2e yr-1)
+#transformed into t CO2/ 1000 ha
+rest_griscom <- geojson_read(here("Data", country, "ReforestationPotential_Griscom.geojson"),  what = "sp")
+rest_griscom.df <- rest_griscom@data  %>% 
+  select(-id) %>% 
+  left_join(grid %>% select(id_c, area)) %>% 
+  mutate(p = (sum / 1000)/(1000 *area)) #p in t CO2/ 1000 ha
+
+#absolute hectare per cells
+#transformed into percentage of restoration potential type per cell
+if(country == "IND"){
+  rest_chaturvedi <- geojson_read(here("Data", country, "LandscapeRestorationOpportunities.geojson"),  what = "sp")
+ rest_chaturvedi.df <- rest_chaturvedi@data  %>% 
+  select(-id) %>% 
+  # %>% 
+  pivot_longer(-c(id_c)) %>% 
+   mutate(code = stringr::str_remove(name, "X")) %>%
+  left_join(map_chaturvedi %>% mutate(code = as.character(code))) %>% 
+   left_join(grid %>% select(id_c, area)) %>% 
+   mutate(p = pmin(100, 100 * value/area))
+}
+
+```
+
+
 Below is the table of input data used in the prior module of the downscaling process.
 
 ```{r echo=FALSE, message=FALSE}
@@ -146,12 +196,12 @@ library(knitr)
 table_data <- data.frame(
   `Variable in econometric model` = c("Dependent", "Land use change", "", 
                                       "Explanatory variables", "Land use", 
-                                      "Forest Management", "Mean Travel time to major cities", "Population"),
-  Year = c("", "2015-2019", "", "", "2015", "2015", "2000", "2020"),
+                                      "Forest Management", "Mean Travel time to major cities", "Population", "Crop yield (27 indicidual crops)"),
+  Year = c("", "2015-2019", "", "", "2015", "2015", "2000", "2020", "2015"),
   Unit = c("", "% of lu.from in pixel being converted", "", "", 
-           "hectares", "hectares", "minutes", "Count"),
+           "hectares", "hectares", "minutes", "Count", "kg/ha"),
   Source = c("", "HILDA", "", "", "COPERNICUS", "Lesiv et al.", 
-             "Nelson, A (2008)", "WorldPop")
+             "Nelson, A (2008)", "WorldPop", "GAEZ+")
 )
 
 # Use kable without booktabs
@@ -461,17 +511,100 @@ Xmat_zones <- zones %>%
     dplyr::across(dplyr::starts_with("zone"),    ~ tidyr::replace_na(.x, 0))
   )
 
-Xmat_gaez <- gaez.df %>% 
-  mutate(id_c     = as.character(id_c)) %>%
-  #drop columns that are all zeros
-  select(
-    any_of("id_c"),                               # keep id_c if present
-    where(~ !is.numeric(.x) || any(abs(.x) > 1e-9, na.rm = TRUE))  # keep non-numeric OR has any non-zero
-  )
+#### Crop yield data #####
 
-# see which columns were dropped
-# dropped_cols <- setdiff(names(gaez.df), names(Xmat_gaez))
-# print(dropped_cols)
+# gaez_yield.df: id_c + 25 crop yields (kg/ha)
+yield_cols <- setdiff(names(gaez.df), "id_c")
+
+# 1) log-transform (handles skew and zeros)
+Ylog <- gaez.df  %>% 
+  dplyr::mutate(dplyr::across(all_of(yield_cols), ~ log1p(pmax(.x, 0))))
+
+# 2) overall level per cell (mean log-yield across crops), then z-score
+Xmat_yield_level <- Ylog  %>% 
+  dplyr::rowwise()  %>% 
+  dplyr::mutate(level_mean_log = mean(c_across(all_of(yield_cols)), na.rm = TRUE))  %>% 
+  dplyr::ungroup()  %>% 
+  dplyr::transmute(
+    id_c,
+    m = m <- mean(level_mean_log, na.rm=TRUE),
+    s = sd(level_mean_log, na.rm=TRUE),
+    level = level_mean_log,
+    yield_level_z = ifelse(s>0, (level_mean_log - m)/s, 0) 
+  ) %>% 
+  select(id_c, yield_level_z)
+
+# Compute per-cell relative advantage from crop yields
+# - Row-center (relative to the cell's mean across crops)
+# - Optional log1p transform (good for skewed yields & zeros)
+# - Column z-score (so coefficients are comparable)
+# - Drops near-constant crops automatically
+reladv_yields <- function(df, id_col = "id_c", crop_cols = NULL,
+                          transform = c("log1p", "none"),
+                          winsor_p = NULL,          # e.g., 0.01 to tame outliers
+                          nzv_thresh = 1e-6) {
+  
+  stopifnot(id_col %in% names(df))
+  transform <- match.arg(transform)
+  
+  # pick crop columns
+  if (is.null(crop_cols)) {
+    crop_cols <- setdiff(names(df), id_col)
+  }
+  X <- as.matrix(df[, crop_cols, drop = FALSE])
+  
+  # NAs -> 0 (no production) before transforms
+  X[is.na(X)] <- 0
+  
+  # optional winsorization per column - cap extreme values at chosen quantiles
+  # Reduces the influence of extreme points on models/means/SDs while keeping sample size.
+  if (!is.null(winsor_p) && winsor_p > 0 && winsor_p < 0.5) {
+    qlo <- apply(X, 2, quantile, probs = winsor_p,      na.rm = TRUE)
+    qhi <- apply(X, 2, quantile, probs = 1 - winsor_p,  na.rm = TRUE)
+    X   <- pmin(pmax(X, rep(qlo, each = nrow(X))), rep(qhi, each = nrow(X)))
+  }
+  
+  # variance-stabilize (good for yields with zeros)
+  if (transform == "log1p") {
+    X <- log1p(pmax(X, 0))
+  }
+  
+  # --- Relative advantage: subtract per-row mean across crops ---
+  row_mu <- rowMeans(X)                   # N x 1
+  Xc     <- sweep(X, 1, row_mu, "-")      # N x C (row-centered)
+  
+  # --- Column wise standardization & NZV drop ---
+  col_sd <- apply(Xc, 2, sd)
+  keep   <- which(is.finite(col_sd) & col_sd >= nzv_thresh)
+  if (length(keep) == 0L) {
+    stop("All relative-advantage crop columns are (near) constant; check inputs.")
+  }
+  
+  # center & scale by column (guard tiny sds)
+  col_mu_keep <- colMeans(Xc[, keep, drop = FALSE])
+  col_sd_keep <- pmax(apply(Xc[, keep, drop = FALSE], 2, sd), 1e-12)
+  Xcz <- sweep(sweep(Xc[, keep, drop = FALSE], 2, col_mu_keep, "-"),
+               2, col_sd_keep, "/")
+  
+  # back to tibble: id + kept crops
+  out <- tibble::tibble(!!id_col := df[[id_col]]) %>%
+    dplyr::bind_cols(as.data.frame(Xcz))
+  names(out)[-1] <- colnames(Xc)[keep]
+  out
+}
+
+# Your yield table: id_c + 25 crop yield columns (kg/ha)
+yield_cols <- setdiff(names(gaez.df), "id_c")
+
+Xmat_yield_reladv <- reladv_yields(
+  df         = gaez.df,
+  id_col     = "id_c",
+  crop_cols  = yield_cols,
+  transform  = "log1p",   # good default
+  winsor_p   = NULL       # or 0.01 if you have wild outliers
+)
+
+
 
 Xmat_livestock <- livestock.df %>% 
   mutate(id_c     = as.character(id_c)) %>% 
@@ -492,7 +625,8 @@ Xmat <- Xmat_LU %>%
   left_join(Xmat_alt,              by = "id_c") %>%
   left_join(Xmat_slope,            by = "id_c") %>%
   left_join(Xmat_zones,            by = "id_c") %>% 
-  left_join(Xmat_gaez,             by = "id_c") %>% 
+  left_join(Xmat_yield_reladv,             by = "id_c") %>% 
+  left_join(Xmat_yield_level,             by = "id_c") %>% 
   left_join(Xmat_livestock,        by = "id_c") %>% 
   pivot_longer(-id_c, names_to = "ks", values_to = "value") %>%
   rename(ns = id_c)
@@ -736,7 +870,7 @@ stopifnot(setequal(ks_pred, ks_x))
 stopifnot(setequal(unique(pred_coeff_long$ks), unique(X_long$ks)))
 
 results_DS <- downscale(
-  targets     = FABLE %>% dplyr::filter(times > 2020),
+  targets     = FABLE %>% dplyr::filter(times >= 2020),
   start.areas = country_start_areas,
   xmat        = X_long,
   betas       = pred_coeff_long
@@ -825,7 +959,7 @@ min_year <- min(consistency$times, na.rm = TRUE)
 knitr::kable(consistency %>% filter(times >= min_year)) 
 writexl::write_xlsx(consistency %>% filter(times >= min_year), 
            here("output", country, 
-                paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "Diagnostic_allocation_vs_targets.xlsx")))
+                paste0(tag, "Diagnostic_allocation_vs_targets.xlsx")))
 
 
 ```
@@ -981,7 +1115,7 @@ plot_to_save <- LUC_plot_out$LUC.plot +
 plot_to_save
 
 # Save the plot as a TIFF file
-output_file <- here("Output", country, paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "Land-use-map.tiff"))
+output_file <- here("Output", country, paste0(tag, "Land-use-map.tiff"))
 
 ggplot2::ggsave(filename = output_file, plot = plot_to_save, units = "in", height = 6, width = 10, dpi = 300)
 rm(plot_to_save)
@@ -1038,7 +1172,7 @@ Transition_plot$LUC.plot +
 
 #Save the plot to a .tiff file
 tiff(
-  here("Output", country, paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "Land-use-change-map.tiff")),
+  here("Output", country, paste0(tag, "Land-use-change-map.tiff")),
   units = "in", height = 6, width = 10, res = 300
 )
 plot(Transition_plot$LUC.plot + 
@@ -1066,11 +1200,80 @@ plot_to_save <- LUC_plot_2050$LUC.plot +
 plot_to_save
 
 # Save the plot as a TIFF file
-output_file <- here("Output", country, paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "2050_Land-use-map.tiff"))
+output_file <- here("Output", country, paste0(tag, "2050_Land-use-map.tiff"))
 
 ggplot2::ggsave(filename = output_file, plot = plot_to_save, units = "in", height = 6, width = 10, dpi = 300)
 rm(plot_to_save)
 ```
+
+
+
+```{r map cumulative change 2020-2050, echo =FALSE, message = FALSE}
+cum_diff <- results_DS
+cum_diff$out.res <- results_DS$out.res %>% 
+  group_by(lu.to, lu.from, ns, times) %>% 
+  summarise(value = sum(value)) %>% 
+  filter(times %in% c(2020, 2050)) %>% 
+  pivot_wider(names_from = times, values_from = value) %>% 
+  mutate(value= `2050` - `2020`) %>% 
+  mutate(times = 2050)
+            
+LUC_plot_2020_2050 <- LUC_plot(cum_diff, rasterized_layer)
+plot_to_save <- LUC_plot_2020_2050$LUC.plot +
+  ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm"),
+                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
+plot_to_save      
+
+Transition_plot_20_50 <- LUC_plot(
+  cum_diff, 
+  rasterized_layer, 
+  color = color,
+  label = label
+)
+
+#Define the limit for color scaling
+limit <- max(abs(Transition_plot_20_50[["plot.df"]]$value)) * c(-1, 1)
+
+# Step 5: Create the plot with updated scale and theme adjustments
+Transition_plot_20_50$LUC.plot + 
+  ggplot2::scale_fill_gradient2() +
+  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
+                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
+
+
+```
+```{r}
+detailed_diff <- results_DS
+detailed_diff$out.res <- results_DS$out.res %>% 
+  filter(lu.from == lu.to) %>% 
+  filter(times %in% c(2020, 2050)) %>% 
+  pivot_wider(names_from = times, values_from = value) %>% 
+  mutate(value= `2050` - `2020`) %>% 
+  select(ns, lu.from, lu.to, value) %>% 
+  rbind(
+    results_DS$out.res %>% 
+  group_by(lu.to, lu.from, ns) %>% 
+  summarise(value = sum(value))
+  ) %>% 
+  left_join(ns_map %>% select(-ns), by = c("ns" = "ns_int")) %>% 
+  left_join(grid %>% select(id_c, area)) %>% 
+  mutate(value = 100 * value/(area/1000)) %>% 
+  select(ns, lu.from, lu.to, value) %>% 
+  filter(lu.from != lu.to) %>% 
+  filter(lu.from != "urban")
+
+Transition_plot_20_50 <- LUC_plot_detailed(
+  detailed_diff, 
+  rasterized_layer,
+  label = "Transitions in % of pixel"
+)
+
+Transition_plot_20_50
+View(Transition_plot_20_50)
+View(Transition_plot_20_50$plot.df)
+View(detailed_diff$out.res)
+```
+
 
 ## Priors check
 
@@ -1119,7 +1322,7 @@ for(cur.from in land.from){
 
 writexl::write_xlsx(std_importance_df, 
            here("output", country, 
-                paste0(format(Sys.Date(), "%y%m%d"), "_", pathway, "_", "Std_importance.xlsx")))
+                paste0(tag, "Std_importance.xlsx")))
 
 # Example table for one origin:
 std_importance("otherland") %>% knitr::kable()
@@ -1208,4 +1411,6 @@ perm_importance <- function(lu_from, features = colnames(X_mat), n_perm = 1) {
 #perm_importance("otherland") |> head(15)
 
 ```
+
+
 
