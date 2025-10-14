@@ -902,13 +902,15 @@ downscaled_LUC <- results_DS$out.res
 
 # Build a long mask of allowed = 0/1 per (ns, lu.to)
 # Example: forbid cropland expansion inside ProtectedAreas
-# pa_cells <- ProtectedAreas.df$id_c
+pa_cells <- rest_chaturvedi.df %>% 
+  filter(restoration_type == "protected" & p >=80) %>% 
+  select(id_c)
 # 
-# restr <- expand.grid(ns = unique(start_map$ns),
-#                      lu.to = c("cropland","forest","newforest","otherland","pasture","urban"),
-#                      stringsAsFactors = FALSE) %>%
-#   mutate(value = 1L) %>%
-#   mutate(value = ifelse(ns %in% pa_cells & lu.to %in% c("cropland","urban","pasture"), 0L, value))
+restriction <- expand.grid(ns = unique(start_map$ns),
+                     lu.to = c("cropland","forest","newforest","otherland","pasture","urban"),
+                     stringsAsFactors = FALSE) %>%
+  mutate(value = 1L) %>%
+  mutate(value = ifelse(ns %in% pa_cells & lu.to %in% c("cropland","urban","pasture"), 0L, value))
 # 
 # # Option A: If supported, pass to downscale()
 # results_DS <- downscale(
