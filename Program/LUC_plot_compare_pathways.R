@@ -1,12 +1,22 @@
 # function to plot for several pathways, land use transitions in proportion of the total pixel from 2020 to 2050
 
-LUC_plot_compare_pathways <- function(list_res, rasterfile, Path=NULL, LU=NULL, color = "Greens", label = "Area in ha per pixel"){
+LUC_plot_compare_pathways <- function(list_res, rasterfile, names, Path=NULL, LU=NULL, color = "Greens", label = "Area in ha per pixel"){
   
   plot_df <- terra::as.data.frame(rasterfile, xy = TRUE, na.rm = FALSE)
   
   to.plot <- data.frame()
   for(cur in 1:length(list_res)){
-    to.plot <- rbind.data.frame(to.plot, list_res[[cur]]$out.res %>% mutate(pathway = cur))
+    
+    temp <- list_res[[cur]]$out.res %>% 
+      group_by(lu.to, lu.from, ns, times) %>% 
+      summarise(value = sum(value)) %>% 
+      filter(times %in% c(2025, 2050)) %>% 
+      pivot_wider(names_from = times, values_from = value) %>% 
+      mutate(value= `2050` - `2025`) %>% 
+      mutate(times = 2050) %>% 
+      mutate(pathway = names[cur])
+    
+    to.plot <- rbind.data.frame(to.plot, temp )
   }
   
   
@@ -27,7 +37,7 @@ LUC_plot_compare_pathways <- function(list_res, rasterfile, Path=NULL, LU=NULL, 
   
   plot_obj <- ggplot2::ggplot() +
     ggplot2::geom_tile(data=plot_df, aes(x=x, y=y, fill=value, group=lu.to), alpha=0.8) +
-    ggplot2::scale_fill_distiller(palette = color , name=label, direction = 1)+
+    #ggplot2::scale_fill_distiller(palette = color , name=label, direction = 1)+
     ggplot2::scale_fill_gradient2(low = "red",
                                   mid = "white",
                                   high = "blue",

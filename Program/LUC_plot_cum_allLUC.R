@@ -19,7 +19,16 @@ LUC_plot_cum_allLUC <- function(res, rasterfile, LU.from=NULL, LU=NULL, color = 
     inputs <- to.plot %>% dplyr::group_by(ns, lu.to, lu.from) %>% dplyr::summarise(value = sum(value),.groups = "keep") %>% subset(lu.from==LU.from)
   }
   
-  plot_df <- merge(plot_df, inputs, by="ns")
+  plot_df <- merge(plot_df, inputs, by="ns") %>%
+    mutate(lu.from = factor(lu.from, 
+                            levels = c("cropland", "otherland", "pasture", "forest")),
+           lu.to   = factor(lu.to,   
+                            levels = c("cropland", "otherland", "pasture", "newforest", "urban")))
+  
+  row_order <- c()
+  
+  df2 <- df 
+  
   
   plot_obj <- ggplot2::ggplot() +
     ggplot2::geom_tile(data=plot_df, aes(x=x, y=y, fill=value, group=lu.to), alpha=0.8) +

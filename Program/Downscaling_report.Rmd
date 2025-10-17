@@ -36,6 +36,7 @@ library(readr)
 library(forcats)
 library(purrr)
 library(writexl)
+library(ggplot2)
 
 if (requireNamespace("conflicted", quietly = TRUE)) {
   conflicted::conflict_prefer("filter",    "dplyr", quiet = TRUE)
@@ -62,6 +63,8 @@ tag   <- paste(stamp, country, pathway, start_map_source, sep = "_")
 
 ```{r loading special functions, include = FALSE}
 source(here("Program", "LUC_plot_cum_allLUC.R"))
+source(here("Program", "LUC_plot_compare_pathways.R"))
+source(here("Program", "wrangle_plot.R"))
 ```
  
 
@@ -148,6 +151,9 @@ map_Copernicus <- readxl::read_excel(here("Data/mapping_code.xlsx"),
 
 map_ForestMgmt <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
                                 sheet = "ForestManagement")
+
+map_protectedareas <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
+                                sheet = "ProtectedAreas")
 ```
 
 
@@ -157,7 +163,7 @@ map_ForestMgmt <- readxl::read_excel(here("Data/mapping_code.xlsx"),
 map_chaturvedi <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
                                 sheet = "Chaturvedi")
 
-#Global tree cover (existing and potential) (%)
+#Global tree cover (existing and potential) (%) (remove existing? which map is used for existing?)
 rest_bastin <- geojson_read(here("Data", country, "GlobalTreeRestorationPotential_Bastin.geojson"),  what = "sp")
 rest_bastin.df <- rest_bastin@data  %>% 
   select(-id) 
@@ -173,7 +179,8 @@ rest_griscom.df <- rest_griscom@data  %>%
 #absolute hectare per cells
 #transformed into percentage of restoration potential type per cell
 if(country == "IND"){
-  rest_chaturvedi <- geojson_read(here("Data", country, "LandscapeRestorationOpportunities.geojson"),  what = "sp")
+  rest_chaturvedi <- geojson_read(here("Data", country, "LandscapeRestorationOpportunities.geojson"),  
+                                  what = "sp")
  rest_chaturvedi.df <- rest_chaturvedi@data  %>% 
   select(-id) %>% 
   # %>% 
@@ -183,6 +190,24 @@ if(country == "IND"){
    left_join(grid %>% select(id_c, area)) %>% 
    mutate(p = pmin(100, 100 * value/area))
 }
+
+#Area with potential for forest regeneration per pixel
+#Values are given in hectares
+rest_williams <- geojson_read(here("Data", country, "PotentialForestRegenerationTropicalForest_Williams.geojson"),  
+                                  what = "sp")
+rest_williams.df <- rest_williams@data  %>% 
+  select(-id) 
+
+rest_walker <- geojson_read(here("Data", country, "UnrealizedPotentialIncreaseStorageCarbonLand_Walker.geojson"),  
+                                  what = "sp")
+rest_walker.df <- rest_walker@data  %>% 
+  select(-id) 
+
+rest_hasler <- geojson_read(here("Data", country, "UnrealizedPotentialIncreaseStorageCarbonLand_Walker.geojson"),  
+                                  what = "sp")
+rest_hasler.df <- rest_hasler@data  %>% 
+  select(-id) 
+
 
 ```
 
@@ -429,8 +454,8 @@ FABLE <- readxl::read_excel(here("Data", country, "FABLE.xlsx"), sheet = pathway
     times = YearEnd
   ) %>%
   # Select necessary columns and filter out unchanged land covers
-  select(times, lu.from, lu.to, value) %>%
-  filter(lu.from != lu.to)
+  select(times, lu.from, lu.to, value) #%>%
+  #filter(lu.from != lu.to)
   
 FABLE <- FABLE %>%
   # Remap non-forest -> forest to newforest (afforestation)
@@ -442,8 +467,8 @@ FABLE <- FABLE %>%
   filter(!(lu.from == "newforest")) %>%
   # Collapse duplicates created by the remap; keep off-diagonal only
   group_by(times, lu.from, lu.to) %>%
-  summarise(value = sum(value, na.rm = TRUE), .groups = "drop") %>%
-  filter(lu.from != lu.to)
+  summarise(value = sum(value, na.rm = TRUE), .groups = "drop") #%>%
+  #filter(lu.from != lu.to)
 
 table(FABLE$lu.from, FABLE$lu.to) %>% knitr::kable()
 
@@ -625,8 +650,8 @@ Xmat <- Xmat_LU %>%
   left_join(Xmat_alt,              by = "id_c") %>%
   left_join(Xmat_slope,            by = "id_c") %>%
   left_join(Xmat_zones,            by = "id_c") %>% 
-  left_join(Xmat_yield_reladv,             by = "id_c") %>% 
-  left_join(Xmat_yield_level,             by = "id_c") %>% 
+  left_join(Xmat_yield_reladv,     by = "id_c") %>% 
+  left_join(Xmat_yield_level,      by = "id_c") %>% 
   left_join(Xmat_livestock,        by = "id_c") %>% 
   pivot_longer(-id_c, names_to = "ks", values_to = "value") %>%
   rename(ns = id_c)
@@ -698,8 +723,8 @@ X_wide <- country_df$xmat %>%
 # Optional safety check: no NAs
 stopifnot(!any(is.na(X_wide)))
 
-results_MNL <- data.frame()
-pred_coeff_long <- data.frame()
+results_MNL         <- data.frame()
+pred_coeff_long     <- data.frame()
 country_start_areas <- data.frame()
 
 
@@ -710,19 +735,19 @@ X_wide0 <- country_df$xmat %>%
 
 # separate ns and features
 feat_names <- setdiff(colnames(X_wide0), "ns")
-X0 <- as.matrix(X_wide0[, feat_names, drop = FALSE])
+X0         <- as.matrix(X_wide0[, feat_names, drop = FALSE])
 
 # drop constant columns globally
-sd_all <- apply(X0, 2, sd)
-keep_feat <- names(sd_all)[sd_all > 0]
-X0 <- X0[, keep_feat, drop = FALSE]
+sd_all     <- apply(X0, 2, sd)
+keep_feat  <- names(sd_all)[sd_all > 0]
+X0         <- X0[, keep_feat, drop = FALSE]
 feat_names <- colnames(X0)
 
 # (optional) mild standardization for conditioning (skips columns with tiny sd)
-mu <- colMeans(X0)
-sdv <- apply(X0, 2, sd)
+mu         <- colMeans(X0)
+sdv        <- apply(X0, 2, sd)
 sdv[sdv < 1e-12] <- 1  # guard
-X0  <- sweep(sweep(X0, 2, mu, "-"), 2, sdv, "/")
+X0         <- sweep(sweep(X0, 2, mu, "-"), 2, sdv, "/")
 
 rownames(X0) <- X_wide0$ns  # keep row keys
 
@@ -878,11 +903,7 @@ results_DS <- downscale(
 
 # ns -> ns_int using your ns_map (built earlier)
 
-results_DS$out.res <- results_DS$out.res %>%
-  dplyr::mutate(ns = as.character(ns)) %>%
-  dplyr::left_join(ns_map %>% dplyr::select(ns, ns_int), by = "ns") %>%
-  dplyr::mutate(ns = ns_int) %>%
-  dplyr::select(-ns_int)
+results_DS$out.res <- format_to_id_map(results_DS, ns_map)
 
 stopifnot(!anyNA(results_DS$out.res$ns))
 
@@ -896,30 +917,90 @@ downscaled_LUC <- results_DS$out.res
 
 ```{r restriction data, echo = FALSE, message=FALSE}
 
-### code to use when ready to add constraints ####
-
 ## Protected areas
 
+#Almost no protected areas in India - will not use it
+
 # Build a long mask of allowed = 0/1 per (ns, lu.to)
-# Example: forbid cropland expansion inside ProtectedAreas
-pa_cells <- rest_chaturvedi.df %>% 
-  filter(restoration_type == "protected" & p >=80) %>% 
-  select(id_c)
+# pa_cells <- ProtectedAreas.df %>% 
+#   pivot_longer(-c(id_c)) %>% 
+#   mutate(code = stringr::str_remove(name, "X")) %>%
+#   left_join(map_protectedareas %>% mutate(code = as.character(code))) %>% 
+#   group_by(id_c) %>% 
+#   #this is in km2 so I divide by 10 to get in 1000 ha - 1 km² = 0.1 thousand ha
+#   summarise(value = sum(value,na.rm = T)/10) %>% 
+#   left_join(grid %>% 
+#               select(id_c, area) %>% 
+#               #this is in km2 so I divide by 10 to get in 1000 ha - 1 km² = 0.1 thousand ha
+#               mutate(area = area/10), by = "id_c") %>% 
+#   mutate(p = 100 * value/area) #in %
 # 
-restriction <- expand.grid(ns = unique(start_map$ns),
-                     lu.to = c("cropland","forest","newforest","otherland","pasture","urban"),
-                     stringsAsFactors = FALSE) %>%
-  mutate(value = 1L) %>%
-  mutate(value = ifelse(ns %in% pa_cells & lu.to %in% c("cropland","urban","pasture"), 0L, value))
-# 
+# restriction <- expand.grid(ns = unique(start_map$ns),
+#                      lu.to = c("cropland","forest","newforest","otherland","pasture","urban"),
+#                      stringsAsFactors = FALSE) %>%
+#   mutate(value = 1L) %>%
+#   mutate(value = ifelse(ns %in% pa_cells & lu.to %in% c("cropland","urban","pasture"), 0L, value))
+# # 
+
+
+#Use Griscom's global restoration map in t CO2/ 1000 ha
+q75 <- quantile(rest_griscom.df[["p"]], prob=c(.75), type=1)
+
+not_restoration_worthy <- rest_griscom.df %>% 
+  filter(p < q75) %>% 
+  merge(ns_map) %>% 
+  select(ns)
+
+rest_worthy <- setdiff(ns_map["ns"], not_restoration_worthy)
+
+test_notworthy <- ns_map %>% 
+  filter(ns %in% rest_worthy[[1]]) %>% 
+  mutate(value = 1) %>% 
+  rbind(ns_map %>% 
+          filter(ns %in% not_restoration_worthy[[1]])
+        %>% mutate(value = -1))%>%
+  mutate(lu.from = "any",
+         lu.to = "newforest",
+         times = 2025) %>% 
+  select(-ns) %>% 
+  rename(ns = ns_int) %>% 
+  select(ns, times, lu.from, lu.to, value)
+
+results_DS_test <- results_DS
+results_DS_test$out.res <- test_notworthy
+
+LUC_plot(results_DS_test, rasterized_layer)
+  
+## /!\ /!\ /!\ /!\ /!\  
+# restriction table needs to include exactly the same (lu.from, lu.to) transition pairs as in targets 
+# (excluding diagonals where lu.from == lu.to). Using any subset/superset leads to errors or unexpected behavior.
+## /!\ /!\ /!\ /!\ /!\ 
+
+restriction <- data.frame(
+  expand.grid(ns               = unique(start_map$ns),
+              #lu.from          = c("cropland", "forest", "otherland", "pasture", "urban"),
+              lu.to            = c("cropland", "newforest", "otherland", "pasture", "urban", "forest"),
+              stringsAsFactors = FALSE) %>%
+    # filter(!(lu.from == "forest" & lu.to == "newforest")) %>% 
+    # filter(!(lu.from != "forest" & lu.to == "forest")) %>% 
+    # filter(!(lu.from == lu.to)) %>% 
+    #allowed
+    mutate(value = 0L) %>% 
+    #not allowed
+    mutate(value = ifelse((ns %in% not_restoration_worthy[[1]] & lu.to == "newforest"), 1L, value)) 
+)
+
+
 # # Option A: If supported, pass to downscale()
-# results_DS <- downscale(
-#   targets = FABLE %>% filter(times > 2020),
-#   start.areas = country_start_areas,
-#   xmat = X_long,
-#   betas = pred_coeff_long,
-#   restriction = restr   # <-- if the API supports it
-# )
+results_DS_rest <- downscale(
+  targets     = FABLE %>% filter(times >= 2020),
+  start.areas = country_start_areas,
+  xmat        = X_long,
+  betas       = pred_coeff_long,
+  restrictions = restriction   # <-- if the API supports it
+)
+
+results_DS_rest$out.res <- format_to_id_map(results_DS_rest, ns_map)
 # 
 # saveRDS(results_DS, here("Output", country, paste0(tag, "_downscale.rds")))
 # saveRDS(pred_coeff_long, here("Output", country, paste0(tag, "_mnl_betas.rds")))
@@ -938,31 +1019,62 @@ How to interpret the results? Values should be very close to 0%. Systematically 
 # helper to normalize times consistently
 norm_year <- function(x) as.integer(as.character(x))
 
-alloc_agg <- downscaled_LUC %>%
-  mutate(times = norm_year(times)) %>%
-  group_by(times, lu.from, lu.to) %>%
-  summarise(alloc = sum(value, na.rm = TRUE), .groups = "drop")
+alloc_agg_fct <- function(res) {
+  
+  temp <- res$out.res
+  
+  alloc <- temp %>% 
+    mutate(times = norm_year(times)) %>%
+    group_by(times, lu.from, lu.to) %>%
+    summarise(alloc = sum(value, na.rm = TRUE), .groups = "drop")
+  
+  return(alloc)
+}
+
+alloc_agg_norest <- alloc_agg_fct(results_DS)
+alloc_agg_rest <- alloc_agg_fct(results_DS_rest)
 
 targ_agg <- FABLE %>%
   mutate(times = norm_year(times)) %>%           # <- force same type as alloc_agg
-  filter(times > 2020) %>%
+  filter(times >= 2020) %>%
   group_by(times, lu.from, lu.to) %>%
   summarise(target = sum(value, na.rm = TRUE), .groups = "drop")
 
 # now the join will match on identical types
-consistency <- full_join(alloc_agg, targ_agg, by = c("times","lu.from","lu.to")) %>%
-  mutate(across(c(alloc, target), ~ replace_na(.x, 0)),
-         pct_err = 100 * (alloc - target) / pmax(abs(target), 1e-9)) %>%
-  filter(lu.from != lu.to)
 
-# if you filter by min/max year anywhere, make sure you're numeric:
-min_year <- min(consistency$times, na.rm = TRUE)
+consistency_fct <- function(alloc, targ){
+  
+  consistency <- full_join(alloc, targ, by = c("times","lu.from","lu.to")) %>%
+    mutate(across(c(alloc, target), ~ replace_na(.x, 0)),
+           pct_err = 100 * (alloc - target) / pmax(abs(target), 1e-9)) %>%
+    filter(lu.from != lu.to)
+  
+  # if you filter by min/max year anywhere, make sure you're numeric:
+  min_year <- min(consistency$times, na.rm = TRUE)
+  print(
+  knitr::kable(consistency %>% filter(times >= min_year)) 
+  )
+  writexl::write_xlsx(consistency %>% filter(times >= min_year), 
+                      here("output", country, 
+                           paste0(tag, "Diagnostic_allocation_vs_targets.xlsx")))
+  
+  
+}
+# consistency <- full_join(alloc_agg, targ_agg, by = c("times","lu.from","lu.to")) %>%
+#   mutate(across(c(alloc, target), ~ replace_na(.x, 0)),
+#          pct_err = 100 * (alloc - target) / pmax(abs(target), 1e-9)) %>%
+#   filter(lu.from != lu.to)
+# 
+# # if you filter by min/max year anywhere, make sure you're numeric:
+# min_year <- min(consistency$times, na.rm = TRUE)
+# 
+# knitr::kable(consistency %>% filter(times >= min_year)) 
+# writexl::write_xlsx(consistency %>% filter(times >= min_year), 
+#            here("output", country, 
+#                 paste0(tag, "Diagnostic_allocation_vs_targets.xlsx")))
 
-knitr::kable(consistency %>% filter(times >= min_year)) 
-writexl::write_xlsx(consistency %>% filter(times >= min_year), 
-           here("output", country, 
-                paste0(tag, "Diagnostic_allocation_vs_targets.xlsx")))
-
+consistency_fct(alloc_agg_norest, targ_agg)
+consistency_fct(alloc_agg_rest, targ_agg)
 
 ```
 
@@ -1131,43 +1243,17 @@ rm(plot_to_save)
 results_DS_LUC <- results_DS
 
 # Create 'gain' and 'loss' datasets
-results_DS_LUC$out.res <- results_DS_LUC$out.res %>%
-  filter(lu.from != lu.to) %>%
-  # Group by `lu.to`, `ns`, and `times` for gains
-  group_by(lu.to, ns, times) %>%
-  summarise(gain = sum(value, na.rm = TRUE), .groups = "drop") %>%
-  mutate(Type = "gain", lu = lu.to) %>%
-  
-  # Bind the losses dataset by grouping by `lu.from`
-  bind_rows(
-    results_DS_LUC$out.res %>%
-      filter(lu.from != lu.to) %>%
-      group_by(lu.from, ns, times) %>%
-      summarise(loss = -sum(value, na.rm = TRUE), .groups = "drop") %>%
-      mutate(Type = "loss", lu = lu.from)
-  ) %>%
-  
-  # Summarize the final dataset grouping by land-use (`lu`), time, and pixel (`ns`)
-  group_by(lu, times, ns) %>%
-  summarise(value = sum(gain, loss, na.rm = TRUE), .groups = "drop") %>%
-  rename(lu.to = lu)
-
-#Define plot aesthetics
-color = "PRGn"
-label = "Area gains and losses in 1000 ha per pixel"
+results_DS_LUC$out.res <- loss_and_gains(results_DS_LUC) 
 
 #Create the transition plot using LUC_plot
 Transition_plot <- LUC_plot(
   results_DS_LUC, rasterized_layer, 
-  color = color,
-  label = label
+  color = "PRGn",
+  label = "Area gains and losses in 1000 ha per pixel"
 )
 
-#Define the limit for color scaling
-limit <- max(abs(Transition_plot[["plot.df"]]$value)) * c(-1, 1)
-
 # Step 5: Create the plot with updated scale and theme adjustments
-Transition_plot$LUC.plot + 
+LUC_map <- Transition_plot$LUC.plot + 
   ggplot2::scale_fill_gradient2() +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
                  panel.background = ggplot2::element_rect(fill = "lightgrey"))
@@ -1177,34 +1263,40 @@ tiff(
   here("Output", country, paste0(tag, "Land-use-change-map.tiff")),
   units = "in", height = 6, width = 10, res = 300
 )
-plot(Transition_plot$LUC.plot + 
-  ggplot2::scale_fill_gradient2() +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
-                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
-)
-dev.off()
+plot(LUC_map)
 
+dev.off()
 
 
 ```
 
+
+```{r}
+rm(LUC_map)
+```
+
 ```{r 2020 map, echo = FALSE, message = FALSE}
 
-results_DS_2050 <- results_DS
+results_DS_2050         <- results_DS
 results_DS_2050$out.res <- results_DS_2050$out.res %>% 
   dplyr::filter(times %in% c(2020, 2050))
 
 # Create the land-use change plot for 2050
 LUC_plot_2050 <- LUC_plot(results_DS_2050, rasterized_layer)
-plot_to_save <- LUC_plot_2050$LUC.plot +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm"),
-                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
+plot_to_save  <- LUC_plot_2050$LUC.plot +
+  ggplot2::theme(
+    legend.key.width = ggplot2::unit(0.8, "cm"),
+    panel.background = ggplot2::element_rect(fill = "lightgrey"))
+
 plot_to_save
 
 # Save the plot as a TIFF file
-output_file <- here("Output", country, paste0(tag, "2050_Land-use-map.tiff"))
 
-ggplot2::ggsave(filename = output_file, plot = plot_to_save, units = "in", height = 6, width = 10, dpi = 300)
+ggplot2::ggsave(
+  filename = here("Output", country, paste0(tag, "2050_Land-use-map.tiff")), 
+  plot = plot_to_save, 
+  units = "in", 
+  height = 6, width = 10, dpi = 300)
 rm(plot_to_save)
 ```
 
@@ -1212,68 +1304,87 @@ rm(plot_to_save)
 
 ```{r map cumulative change 2020-2050, echo =FALSE, message = FALSE}
 cum_diff <- results_DS
-cum_diff$out.res <- results_DS$out.res %>% 
-  group_by(lu.to, lu.from, ns, times) %>% 
-  summarise(value = sum(value)) %>% 
-  filter(times %in% c(2020, 2050)) %>% 
-  pivot_wider(names_from = times, values_from = value) %>% 
-  mutate(value= `2050` - `2020`) %>% 
-  mutate(times = 2050)
+cum_diff$out.res <- cum_difference(cum_diff)
             
 LUC_plot_2020_2050 <- LUC_plot(cum_diff, rasterized_layer)
 plot_to_save <- LUC_plot_2020_2050$LUC.plot +
+  ggplot2::scale_fill_gradient2(low = "red",
+                                  mid = "white",
+                                  high = "blue")+
   ggplot2::theme(legend.key.width = ggplot2::unit(0.8, "cm"),
                  panel.background = ggplot2::element_rect(fill = "lightgrey"))
 plot_to_save      
 
-Transition_plot_20_50 <- LUC_plot(
-  cum_diff, 
-  rasterized_layer, 
-  color = color,
-  label = label
-)
-
-#Define the limit for color scaling
-limit <- max(abs(Transition_plot_20_50[["plot.df"]]$value)) * c(-1, 1)
-
-# Step 5: Create the plot with updated scale and theme adjustments
-Transition_plot_20_50$LUC.plot + 
-  ggplot2::scale_fill_gradient2() +
-  ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
-                 panel.background = ggplot2::element_rect(fill = "lightgrey"))
-
+ggplot2::ggsave(
+  filename = here("Output", country, paste0(tag, "2020_2050_cumulative_final_Land-use_change-map.tiff")), 
+  plot = plot_to_save, 
+  units = "in", 
+  height = 6, width = 10, dpi = 300)
+rm(plot_to_save)
 
 ```
-```{r}
-detailed_diff <- results_DS
-detailed_diff$out.res <- results_DS$out.res %>% 
-  filter(lu.from == lu.to) %>% 
-  filter(times %in% c(2020, 2050)) %>% 
-  pivot_wider(names_from = times, values_from = value) %>% 
-  mutate(value= `2050` - `2020`) %>% 
-  select(ns, lu.from, lu.to, value) %>% 
-  rbind(
-    results_DS$out.res %>% 
-  group_by(lu.to, lu.from, ns) %>% 
-  summarise(value = sum(value))
-  ) %>% 
-  left_join(ns_map %>% select(-ns), by = c("ns" = "ns_int")) %>% 
-  left_join(grid %>% select(id_c, area)) %>% 
-  mutate(value = 100 * value/(area/1000)) %>% 
-  select(ns, lu.from, lu.to, value) %>% 
-  filter(lu.from != lu.to) %>% 
-  filter(lu.from != "urban")
 
-Transition_plot_20_50 <- LUC_plot_detailed(
+```{r}
+
+### no restrictions ###
+
+detailed_diff <- results_DS
+detailed_diff$out.res <- pairwise_net_difference(results_DS, ns_map) 
+
+Transition_plot_20_50 <- LUC_plot_cum_allLUC(
   detailed_diff, 
   rasterized_layer,
   label = "Transitions in % of pixel"
 )
 
 Transition_plot_20_50
-View(Transition_plot_20_50)
-View(Transition_plot_20_50$plot.df)
-View(detailed_diff$out.res)
+# View(Transition_plot_20_50)
+# View(Transition_plot_20_50$plot.df)
+# View(detailed_diff$out.res)
+
+ggplot2::ggsave(
+  filename = here("Output", country, paste0(tag, "2020_2050_norestriction_cumulative_pair_wise_Land-use_change-map.tiff")), 
+  plot = Transition_plot_20_50$LUC.plot, 
+  units = "in", 
+  height = 6, width = 10, dpi = 300)
+rm(plot_to_save)
+
+
+### with restriction ####
+
+detailed_diff_rest <- results_DS_rest
+detailed_diff_rest$out.res <- pairwise_net_difference(results_DS_rest, ns_map)
+
+Transition_plot_20_50_rest <- LUC_plot_cum_allLUC(
+  detailed_diff_rest, 
+  rasterized_layer,
+  label = "Transitions in % of pixel"
+)
+
+Transition_plot_20_50_rest
+
+ggplot2::ggsave(
+  filename = here("Output", country, paste0(tag, "2020_2050_restricted_cumulative_pair_wise_Land-use_change-map.tiff")), 
+  plot = Transition_plot_20_50_rest$LUC.plot, 
+  units = "in", 
+  height = 6, width = 10, dpi = 300)
+rm(plot_to_save)
+```
+
+```{r compare with restriction, include = FALSE}
+
+results_several_pathways <- list(results_DS, results_DS_rest)
+pathways_names <- c(paste0(params$pathway, "_norestriction"), paste0(params$pathway, "_WRI_restriction") ) 
+
+LUC_plot_pathways <- LUC_plot_compare_pathways(results_several_pathways, rasterized_layer, pathways_names)
+LUC_plot_pathways$LUC.plot
+
+ggplot2::ggsave(
+  filename = here("Output", country, paste0(tag, "2020_2050_per_pathway_cumulative_final_Land-use_change-map.tiff")), 
+  plot = LUC_plot_pathways$LUC.plot, 
+  units = "in", 
+  height = 6, width = 10, dpi = 300)
+#rm(LU_plot_pathways)
 ```
 
 
