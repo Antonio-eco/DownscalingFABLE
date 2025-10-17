@@ -2,7 +2,9 @@
 
 LUC_plot_cum_allLUC <- function(res, rasterfile, LU.from=NULL, LU=NULL, color = "Greens", label = "Area in ha per pixel"){
   
-  plot_df <- terra::as.data.frame(rasterfile, xy = TRUE, na.rm = FALSE)
+  plot_df <- terra::as.data.frame(rasterfile, xy = TRUE, na.rm = FALSE)%>%
+    #to avoid that a cell from my grid is attributed to several x and y pairs
+    dplyr::distinct(layer, .keep_all = TRUE)
   
   to.plot <- res$out.res
   

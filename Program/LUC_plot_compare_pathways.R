@@ -1,8 +1,16 @@
 # function to plot for several pathways, land use transitions in proportion of the total pixel from 2020 to 2050
 
-LUC_plot_compare_pathways <- function(list_res, rasterfile, names, Path=NULL, LU=NULL, color = "Greens", label = "Area in ha per pixel"){
+LUC_plot_compare_pathways <- function(list_res, rasterfile, grid, names, Path=NULL, LU=NULL, color = "Greens", label = "Area in ha per pixel"){
   
-  plot_df <- terra::as.data.frame(rasterfile, xy = TRUE, na.rm = FALSE)
+  plot_df <- terra::as.data.frame(rasterfile, xy = TRUE, na.rm = FALSE) %>%
+    #to avoid that a cell from my grid is attributed to several x and y pairs
+    dplyr::distinct(layer, .keep_all = TRUE)
+  
+  # plot_df <- grid %>% 
+  #   select(x, y, id_c) %>% 
+  #   merge(ns_map %>% select(-ns) %>% mutate(ns_int = as.numeric(ns_int))) %>% 
+  #   rename(ns = ns_int) %>% 
+  #   select(-id_c)
   
   to.plot <- data.frame()
   for(cur in 1:length(list_res)){
@@ -24,7 +32,7 @@ LUC_plot_compare_pathways <- function(list_res, rasterfile, names, Path=NULL, LU
   
   ns = lu.to = pathway = value = x = y= NULL
   if(is.null(Path) & is.null(LU)){
-    inputs <- to.plot %>% dplyr::group_by(ns, lu.to, pathway)
+    inputs <- to.plot %>% dplyr::group_by(ns, lu.to, pathway) %>% dplyr::summarise(value = sum(value),.groups = "keep")
   } else if(!(is.null(Path) | is.null(LU))){
     inputs <- to.plot %>% dplyr::group_by(ns, lu.to, pathway) %>% dplyr::summarise(value = sum(value),.groups = "keep") %>% subset(lu.to==LU & pathway==Path)
   } else if(is.null(Path)){
@@ -34,6 +42,8 @@ LUC_plot_compare_pathways <- function(list_res, rasterfile, names, Path=NULL, LU
   }
   
   plot_df <- merge(plot_df, inputs, by="ns")
+  
+ 
   
   plot_obj <- ggplot2::ggplot() +
     ggplot2::geom_tile(data=plot_df, aes(x=x, y=y, fill=value, group=lu.to), alpha=0.8) +

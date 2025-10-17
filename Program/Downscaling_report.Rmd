@@ -198,15 +198,16 @@ rest_williams <- geojson_read(here("Data", country, "PotentialForestRegeneration
 rest_williams.df <- rest_williams@data  %>% 
   select(-id) 
 
+#Constrained unrealized potential aboveground biomass, belowground biomass, and soil organic carbon combined density under baseline climate (Mg C ha-1
+#Values are given in Mg C
 rest_walker <- geojson_read(here("Data", country, "UnrealizedPotentialIncreaseStorageCarbonLand_Walker.geojson"),  
                                   what = "sp")
 rest_walker.df <- rest_walker@data  %>% 
   select(-id) 
 
-rest_hasler <- geojson_read(here("Data", country, "UnrealizedPotentialIncreaseStorageCarbonLand_Walker.geojson"),  
-                                  what = "sp")
-rest_hasler.df <- rest_hasler@data  %>% 
-  select(-id) 
+#Net Climate Impact of tree cover restoration (carbon storage and albedo change) (Mg CO2e ha-1)
+#Values are given in Mg CO2 equivalent
+
 
 
 ```
@@ -969,7 +970,9 @@ test_notworthy <- ns_map %>%
 results_DS_test <- results_DS
 results_DS_test$out.res <- test_notworthy
 
-LUC_plot(results_DS_test, rasterized_layer)
+plot_restricted <- LUC_plot(results_DS_test, rasterized_layer)
+
+plot_restricted$LUC.plot
   
 ## /!\ /!\ /!\ /!\ /!\  
 # restriction table needs to include exactly the same (lu.from, lu.to) transition pairs as in targets 
@@ -978,12 +981,12 @@ LUC_plot(results_DS_test, rasterized_layer)
 
 restriction <- data.frame(
   expand.grid(ns               = unique(start_map$ns),
-              #lu.from          = c("cropland", "forest", "otherland", "pasture", "urban"),
+              lu.from          = c("cropland", "forest", "otherland", "pasture", "urban"),
               lu.to            = c("cropland", "newforest", "otherland", "pasture", "urban", "forest"),
               stringsAsFactors = FALSE) %>%
-    # filter(!(lu.from == "forest" & lu.to == "newforest")) %>% 
-    # filter(!(lu.from != "forest" & lu.to == "forest")) %>% 
-    # filter(!(lu.from == lu.to)) %>% 
+    filter(!(lu.from == "forest" & lu.to == "newforest")) %>%
+    filter(!(lu.from != "forest" & lu.to == "forest")) %>%
+    filter(!(lu.from == lu.to)) %>%
     #allowed
     mutate(value = 0L) %>% 
     #not allowed
@@ -1006,6 +1009,82 @@ results_DS_rest$out.res <- format_to_id_map(results_DS_rest, ns_map)
 # saveRDS(pred_coeff_long, here("Output", country, paste0(tag, "_mnl_betas.rds")))
 
 ```
+```{r second set of restriction}
+
+#Use Griscom's global restoration map in t CO2/ 1000 ha
+q75_griscom <- quantile(rest_griscom.df[["p"]], prob=c(.75), type=1)
+
+not_restoration_worthy_griscom <- rest_griscom.df %>% 
+  filter(p < q75_griscom) %>% 
+  merge(ns_map) %>% 
+  select(ns)
+
+#Use walker's unrealized potenial for increased storage of carbon on land
+q75_walker <- quantile(rest_walker.df[["sum"]], prob=c(.75), type=1)
+
+not_restoration_worthy_walker <- rest_walker.df %>% 
+  filter(sum < q75_walker) %>% 
+  merge(ns_map) %>% 
+  select(ns)
+
+
+rest_worthy <- setdiff(
+    setdiff(ns_map["ns"], not_restoration_worthy_griscom),
+    not_restoration_worthy_walker)
+
+test_notworthy <- ns_map %>% 
+  filter(ns %in% rest_worthy[[1]]) %>% 
+  mutate(value = 1) %>% 
+  rbind(ns_map %>% 
+          filter(ns %in% not_restoration_worthy[[1]])
+        %>% mutate(value = -1))%>%
+  mutate(lu.from = "any",
+         lu.to = "newforest",
+         times = 2025) %>% 
+  select(-ns) %>% 
+  rename(ns = ns_int) %>% 
+  select(ns, times, lu.from, lu.to, value)
+
+results_DS_test <- results_DS
+results_DS_test$out.res <- test_notworthy
+
+plot_restricted <- LUC_plot(results_DS_test, rasterized_layer)
+
+plot_restricted$LUC.plot
+
+restriction_full <- data.frame(
+  expand.grid(ns               = unique(start_map$ns),
+              lu.from          = c("cropland", "forest", "otherland", "pasture", "urban"),
+              lu.to            = c("cropland", "newforest", "otherland", "pasture", "urban", "forest"),
+              stringsAsFactors = FALSE) %>%
+    filter(!(lu.from == "forest" & lu.to == "newforest")) %>%
+    filter(!(lu.from != "forest" & lu.to == "forest")) %>%
+    filter(!(lu.from == lu.to)) %>%
+    #allowed
+    mutate(value = 0L) %>% 
+    #not allowed
+    mutate(value = ifelse((ns %in% setdiff(ns_map["ns"], rest_worthy) & lu.to == "newforest"), 1L, value)) 
+)
+
+
+# # Option A: If supported, pass to downscale()
+results_DS_rest_full <- downscale(
+  targets     = FABLE %>% filter(times >= 2020),
+  start.areas = country_start_areas,
+  xmat        = X_long,
+  betas       = pred_coeff_long,
+  restrictions = restriction_full   # <-- if the API supports it
+)
+
+# #Error in error_restrictions[, ccc] : incorrect number of dimensions
+# Error during wrapup: not that many frames on the stack
+# Error: no more error handlers available (recursive errors?); invoking 'abort' restart
+
+
+results_DS_rest_full$out.res <- format_to_id_map(results_DS_rest_full, ns_map)
+
+```
+
 
 ## Aggregate consistency & diagonal zeros
 
@@ -1073,8 +1152,8 @@ consistency_fct <- function(alloc, targ){
 #            here("output", country, 
 #                 paste0(tag, "Diagnostic_allocation_vs_targets.xlsx")))
 
-consistency_fct(alloc_agg_norest, targ_agg)
-consistency_fct(alloc_agg_rest, targ_agg)
+summary(consistency_fct(alloc_agg_norest, targ_agg)) 
+summary(consistency_fct(alloc_agg_rest,   targ_agg))
 
 ```
 
@@ -1271,7 +1350,7 @@ dev.off()
 ```
 
 
-```{r}
+```{r, include = FALSE}
 rm(LUC_map)
 ```
 
@@ -1324,7 +1403,7 @@ rm(plot_to_save)
 
 ```
 
-```{r}
+```{r transitions, echo =FALSE, message = FALSE}
 
 ### no restrictions ###
 
@@ -1337,7 +1416,7 @@ Transition_plot_20_50 <- LUC_plot_cum_allLUC(
   label = "Transitions in % of pixel"
 )
 
-Transition_plot_20_50
+Transition_plot_20_50$LUC.plot
 # View(Transition_plot_20_50)
 # View(Transition_plot_20_50$plot.df)
 # View(detailed_diff$out.res)
@@ -1361,7 +1440,7 @@ Transition_plot_20_50_rest <- LUC_plot_cum_allLUC(
   label = "Transitions in % of pixel"
 )
 
-Transition_plot_20_50_rest
+Transition_plot_20_50_rest$LUC.plot
 
 ggplot2::ggsave(
   filename = here("Output", country, paste0(tag, "2020_2050_restricted_cumulative_pair_wise_Land-use_change-map.tiff")), 
@@ -1371,12 +1450,12 @@ ggplot2::ggsave(
 rm(plot_to_save)
 ```
 
-```{r compare with restriction, include = FALSE}
+```{r compare with restriction, echo =FALSE, message = FALSE}
 
-results_several_pathways <- list(results_DS, results_DS_rest)
-pathways_names <- c(paste0(params$pathway, "_norestriction"), paste0(params$pathway, "_WRI_restriction") ) 
+results_several_pathways <- list(results_DS, results_DS_rest, results_DS_rest_full)
+pathways_names <- c(paste0(params$pathway, "_norestriction"), paste0(params$pathway, "_WRI_restriction"), paste0(params$pathway, "_restrictions")  ) 
 
-LUC_plot_pathways <- LUC_plot_compare_pathways(results_several_pathways, rasterized_layer, pathways_names)
+LUC_plot_pathways <- LUC_plot_compare_pathways(results_several_pathways, rasterized_layer, grid, pathways_names)
 LUC_plot_pathways$LUC.plot
 
 ggplot2::ggsave(
