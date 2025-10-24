@@ -8,7 +8,7 @@ header-includes:
   - \DeclareUnicodeCharacter{2212}{}
 params:
   country : "IND"
-  pathway : "GlobalSustainability"
+  pathway : "NC_Chaturvedi"
   start_map_source : "HILDA"
   mnl_niter : 100
   mnl_nburn : 50
@@ -138,6 +138,10 @@ grid <- read_csv(here("Data", "global", "grid50_equal_area.csv")) %>%
 zones <- grid %>% 
   select(id_c, thermal, zone, BIOME_NAME)
 
+ab_be_biomass <- geojson_read(here("Data", country, "AbovegroundBelowgroundBiomassCarbonDensity.geojson"),  what = "sp")
+ab_be_biomass.df <- ab_be_biomass@data %>% 
+  select(-id)
+
 #mapping
 
 map_HILDA <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
@@ -166,6 +170,9 @@ map_chaturvedi <- readxl::read_excel(here("Data/mapping_code.xlsx"),
 #Global tree cover (existing and potential) (%) (remove existing? which map is used for existing?)
 rest_bastin <- geojson_read(here("Data", country, "GlobalTreeRestorationPotential_Bastin.geojson"),  what = "sp")
 rest_bastin.df <- rest_bastin@data  %>% 
+  filter(!is.na(mean)) %>% 
+  left_join(grid %>% select(id_c, area)) %>% 
+   mutate(rest_area = pmin(area, (mean/100)*area)) %>% 
   select(-id) 
 
 #kilograms of CO2 equivalent per year (kgCO2e yr-1)
@@ -472,6 +479,8 @@ FABLE <- FABLE %>%
   #filter(lu.from != lu.to)
 
 table(FABLE$lu.from, FABLE$lu.to) %>% knitr::kable()
+
+saveRDS(FABLE %>% dplyr::filter(times >= 2020), here("Output", country, paste0(tag, "_FABLE.rds")))
 
 
 
@@ -902,6 +911,11 @@ results_DS <- downscale(
   betas       = pred_coeff_long
 )
 
+saveRDS(country_start_areas, here("Output", country, paste0(stamp, "_country_start_areas.rds")))
+saveRDS(X_long, here("Output", country, paste0(stamp, "_X_long.rds")))
+saveRDS(pred_coeff_long, here("Output", country, paste0(stamp, "_pred_coeff_long.rds")))
+saveRDS(FABLE %>% dplyr::filter(times >= 2020), here("Output", country, paste0(tag, "_FABLE.rds")))
+
 # ns -> ns_int using your ns_map (built earlier)
 
 results_DS$out.res <- format_to_id_map(results_DS, ns_map)
@@ -910,6 +924,7 @@ stopifnot(!anyNA(results_DS$out.res$ns))
 
 downscaled_LUC <- results_DS$out.res
 
+saveRDS(downscaled_LUC, here("Output", country, paste0(tag, "_downscaled_LUC.rds")))
 
 ```
 
@@ -994,7 +1009,7 @@ restriction <- data.frame(
 )
 
 
-# # Option A: If supported, pass to downscale()
+# # 
 results_DS_rest <- downscale(
   targets     = FABLE %>% filter(times >= 2020),
   start.areas = country_start_areas,
@@ -1008,22 +1023,25 @@ results_DS_rest$out.res <- format_to_id_map(results_DS_rest, ns_map)
 # saveRDS(results_DS, here("Output", country, paste0(tag, "_downscale.rds")))
 # saveRDS(pred_coeff_long, here("Output", country, paste0(tag, "_mnl_betas.rds")))
 
+
+saveRDS(results_DS_rest$out.res, here("Output", country, paste0(tag, "_downscaled_LUC_restriction_griscomq75.rds")))
+
 ```
 ```{r second set of restriction}
 
 #Use Griscom's global restoration map in t CO2/ 1000 ha
-q75_griscom <- quantile(rest_griscom.df[["p"]], prob=c(.75), type=1)
+q70_griscom <- quantile(rest_griscom.df[["p"]], prob=c(.05), type=1)
 
 not_restoration_worthy_griscom <- rest_griscom.df %>% 
-  filter(p < q75_griscom) %>% 
+  filter(p < q70_griscom) %>% 
   merge(ns_map) %>% 
   select(ns)
 
 #Use walker's unrealized potenial for increased storage of carbon on land
-q75_walker <- quantile(rest_walker.df[["sum"]], prob=c(.75), type=1)
+q70_walker <- quantile(rest_walker.df[["sum"]], prob=c(.05), type=1)
 
 not_restoration_worthy_walker <- rest_walker.df %>% 
-  filter(sum < q75_walker) %>% 
+  filter(sum < q70_walker) %>% 
   merge(ns_map) %>% 
   select(ns)
 
@@ -1052,10 +1070,44 @@ plot_restricted <- LUC_plot(results_DS_test, rasterized_layer)
 
 plot_restricted$LUC.plot
 
+cells_notworthy <- ns_map %>% 
+  filter(ns %in% unique(c(not_restoration_worthy_griscom[[1]],
+                          not_restoration_worthy_walker[[1]]))) %>% 
+  select(ns_int) %>% 
+  rename(ns = ns_int) %>% 
+  mutate(worthy = 0)
+
+cells_worthy <- ns_map %>% 
+  filter(!(ns %in% unique(c(not_restoration_worthy_griscom[[1]],
+                          not_restoration_worthy_walker[[1]])))) %>% 
+  select(ns_int) %>% 
+  rename(ns = ns_int) %>% 
+  mutate(worthy = 1)
+
+# compute how much land can actually be afforested on these cells
+area_restriction <- start_map_reproj %>% 
+  left_join(ns_map) %>% 
+  select(ns_int, lu.from, value) %>% 
+  rename(ns = ns_int) %>% 
+  left_join(rbind(cells_notworthy, cells_worthy)) %>% 
+  filter(worthy == 1) %>% 
+  filter(lu.from != "forest") %>% 
+  filter(lu.from != "urban") %>% 
+  pivot_wider(names_from = lu.from, values_from = value)
+
+colSums(area_restriction)
+
+# versus how much is planned on being afforested per lu.from type
+area_target_restoration <- FABLE %>% 
+  filter(lu.to == "newforest") %>% 
+  pivot_wider(names_from = lu.from, values_from = value)
+
+colSums(area_target_restoration %>% select(-c(times, lu.to)))
+
 restriction_full <- data.frame(
   expand.grid(ns               = unique(start_map$ns),
               lu.from          = c("cropland", "forest", "otherland", "pasture", "urban"),
-              lu.to            = c("cropland", "newforest", "otherland", "pasture", "urban", "forest"),
+              lu.to            = c("cropland", "forest", "otherland", "pasture", "urban", "newforest"),
               stringsAsFactors = FALSE) %>%
     filter(!(lu.from == "forest" & lu.to == "newforest")) %>%
     filter(!(lu.from != "forest" & lu.to == "forest")) %>%
@@ -1063,16 +1115,16 @@ restriction_full <- data.frame(
     #allowed
     mutate(value = 0L) %>% 
     #not allowed
-    mutate(value = ifelse((ns %in% setdiff(ns_map["ns"], rest_worthy) & lu.to == "newforest"), 1L, value)) 
+    mutate(value = ifelse((ns %in% (setdiff(ns_map["ns"], rest_worthy))$ns & lu.to == "newforest"), 1L, value)) 
 )
 
 
 # # Option A: If supported, pass to downscale()
 results_DS_rest_full <- downscale(
-  targets     = FABLE %>% filter(times >= 2020),
-  start.areas = country_start_areas,
-  xmat        = X_long,
-  betas       = pred_coeff_long,
+  targets      = FABLE %>% filter(times >= 2020),
+  start.areas  = country_start_areas,
+  xmat         = X_long,
+  betas        = pred_coeff_long,
   restrictions = restriction_full   # <-- if the API supports it
 )
 
@@ -1082,6 +1134,8 @@ results_DS_rest_full <- downscale(
 
 
 results_DS_rest_full$out.res <- format_to_id_map(results_DS_rest_full, ns_map)
+saveRDS(results_DS_rest_full$out.res, here("Output", country, paste0(tag, "_downscaled_LUC_restriction_griscomq70_walkerq70.rds")))
+
 
 ```
 
