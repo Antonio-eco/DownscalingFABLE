@@ -2,8 +2,24 @@
 library(here)
 library(scales)
 library(ggnewscale)
+library(readr)
+library(dplyr)
+library(geojsonio)
+library(here)
+library(raster)
+library(dplyr)
+library(tidyr)
+library(downscalr)
+library(stringr)
+#library(kableExtra)
+library(knitr)
+library(readr)
+library(forcats)
+library(purrr)
+library(writexl)
+library(ggplot2)
 
-date <- "251020"
+date <- "251024"
 country <- "IND"
 stamp <-  date
 
@@ -12,12 +28,14 @@ country_start_areas <- read_rds(here("Output", country, paste0(stamp, "_country_
 X_long <- read_rds(here("Output", country, paste0(stamp, "_X_long.rds")))
 pred_coeff_long <- read_rds(here("Output", country, paste0(stamp, "_pred_coeff_long.rds")))
 
-
-FABLE_NC            <- read_rds(here("Output", country, paste0("251021", "_IND_NationalCommitments_HILDA_FABLE.rds")))
+FABLE_CT            <- read_rds(here("Output", country, paste0("251020", "_IND_CurrentTrends_HILDA_FABLE.rds")))
+#FABLE_GS            <- read_rds(here("Output", country, paste0("251105", "_IND_GlobalSustainability_HILDA_FABLE.rds")))
+FABLE_CT_Fesenmyer  <- read_rds(here("Output", country, paste0("251217", "_IND_CT_Fesenmyer_HILDA_FABLE.rds")))
+# FABLE_NC            <- read_rds(here("Output", country, paste0("251021", "_IND_NationalCommitments_HILDA_FABLE.rds")))
 FABLE_NC_Bastin     <- read_rds(here("Output", country, paste0(stamp, "_IND_NC_Bastin_HILDA_FABLE.rds")))
-FABLE_NC_Chaturvedi <- read_rds(here("Output", country, paste0("251021", "_IND_NC_Chaturvedi_HILDA_FABLE.rds")))
+# FABLE_NC_Chaturvedi <- read_rds(here("Output", country, paste0("251021", "_IND_NC_Chaturvedi_HILDA_FABLE.rds")))
 
-l_pathways <- c("FABLE_NC", "FABLE_NC_Bastin", "FABLE_NC_Chaturvedi")
+l_pathways <- c("FABLE_CT", "FABLE_CT_Fesenmyer")
 
 for(cur.path in l_pathways){
   
@@ -189,98 +207,98 @@ dev.off()
 ## Chaturvedi restriction -----
 
 
-target_chaturvedi <- rest_chaturvedi.df %>% 
-  filter(restoration_type == "wide_scale_restoration") %>% 
-  mutate(restoration_area = (p/100)*area/1000) %>% 
-  left_join(ns_map)
-
-colSums(target_chaturvedi %>% select(restoration_area))
-
-chaturvedi_restriction <- target_chaturvedi %>% 
-  filter(restoration_area > 0) %>% 
-  select(ns)
-
-rest_worthy     <- chaturvedi_restriction
-not_rest_worthy <- setdiff(ns_map["ns"], rest_worthy)
-
-## plot to see where the cells are
-test_notworthy <- ns_map %>% 
-  filter(ns %in% rest_worthy[[1]]) %>% 
-  mutate(value = 1) %>% 
-  rbind(ns_map %>% 
-          filter(ns %in% not_rest_worthy[[1]])
-        %>% mutate(value = -1))%>%
-  mutate(lu.from = "any",
-         lu.to = "newforest",
-         times = 2025) %>% 
-  select(-ns) %>% 
-  rename(ns = ns_int) %>% 
-  select(ns, times, lu.from, lu.to, value)
-
-results_DS_plot <- results_FABLE_NC
-results_DS_plot$out.res <- test_notworthy
-
-plot_chaturvedi_restricted <- LUC_plot_restriction(results_DS_plot, rasterized_layer, 
-                                               color = "PRGn", label = "Priority areas for restoration:")
-
-plot_chaturvedi_restricted$LUC.plot  
-
-tiff(
-  here("Output", country, paste0(tag, "_Chaturvedi_restriction_map.tiff")),
-  units = "in", height = 6, width = 10, res = 300
-)
-plot_chaturvedi_restricted$LUC.plot
-dev.off()
-
-restriction_Chaturvedi <- data.frame(
-  expand.grid(ns               = unique(start_map$ns),
-              lu.from          = c("cropland", "forest", "otherland", "pasture", "urban"),
-              lu.to            = c("cropland", "newforest", "otherland", "pasture", "urban", "forest"),
-              stringsAsFactors = FALSE) %>%
-    filter(!(lu.from == "forest" & lu.to == "newforest")) %>%
-    filter(!(lu.from != "forest" & lu.to == "forest")) %>%
-    filter(!(lu.from == lu.to)) %>%
-    #allowed
-    mutate(value = 0L) %>% 
-    #not allowed
-    mutate(value = ifelse((ns %in% (setdiff(ns_map["ns"], rest_worthy))$ns & lu.to == "newforest"), 1L, value)) 
-)
-
-## Chaturvedi potential ----
-
-results_DS_plot <- results_FABLE_NC
-results_DS_plot$out.res <- ns_map %>% 
-  left_join(rest_chaturvedi.df %>% filter(restoration_type == "wide_scale_restoration")) %>% 
-  select(-ns) %>% 
-  rename(ns = ns_int) %>% 
-  mutate(times = 2025,
-         lu.from = "any",
-         lu.to = "newforest",
-         value = area) %>% 
-  select(ns, times, lu.from, lu.to, value)
-
-results_DS_plot$out.res <- target_chaturvedi %>% 
-  select(-ns) %>% 
-  rename(ns = ns_int) %>% 
-  mutate(times = 2025,
-         lu.from = "any",
-         lu.to = "newforest",
-         value = restoration_area) %>% 
-  select(ns, times, lu.from, lu.to, value)
-
-plot_chaturvedi_restoration <- LUC_plot(results_DS_plot, rasterized_layer, 
-                                    year = 2025, LU = "newforest",
-                                    color = "Blues", label = "Restoration potential (kha):") 
-tiff(
-  here("Output", country, paste0(tag, "_Chaturvedi_potential_map.tiff")),
-  units = "in", height = 6, width = 10, res = 300
-)
-
-plot_chaturvedi_restoration$LUC.plot +
-  ggplot2::theme(legend.text = element_text(size = 14))+
-  ggplot2::theme(legend.title = element_text(size = 16))
-
-dev.off()
+# target_chaturvedi <- rest_chaturvedi.df %>% 
+#   filter(restoration_type == "wide_scale_restoration") %>% 
+#   mutate(restoration_area = (p/100)*area/1000) %>% 
+#   left_join(ns_map)
+# 
+# colSums(target_chaturvedi %>% select(restoration_area))
+# 
+# chaturvedi_restriction <- target_chaturvedi %>% 
+#   filter(restoration_area > 0) %>% 
+#   select(ns)
+# 
+# rest_worthy     <- chaturvedi_restriction
+# not_rest_worthy <- setdiff(ns_map["ns"], rest_worthy)
+# 
+# ## plot to see where the cells are
+# test_notworthy <- ns_map %>% 
+#   filter(ns %in% rest_worthy[[1]]) %>% 
+#   mutate(value = 1) %>% 
+#   rbind(ns_map %>% 
+#           filter(ns %in% not_rest_worthy[[1]])
+#         %>% mutate(value = -1))%>%
+#   mutate(lu.from = "any",
+#          lu.to = "newforest",
+#          times = 2025) %>% 
+#   select(-ns) %>% 
+#   rename(ns = ns_int) %>% 
+#   select(ns, times, lu.from, lu.to, value)
+# 
+# results_DS_plot <- results_FABLE_NC
+# results_DS_plot$out.res <- test_notworthy
+# 
+# plot_chaturvedi_restricted <- LUC_plot_restriction(results_DS_plot, rasterized_layer, 
+#                                                color = "PRGn", label = "Priority areas for restoration:")
+# 
+# plot_chaturvedi_restricted$LUC.plot  
+# 
+# tiff(
+#   here("Output", country, paste0(tag, "_Chaturvedi_restriction_map.tiff")),
+#   units = "in", height = 6, width = 10, res = 300
+# )
+# plot_chaturvedi_restricted$LUC.plot
+# dev.off()
+# 
+# restriction_Chaturvedi <- data.frame(
+#   expand.grid(ns               = unique(start_map$ns),
+#               lu.from          = c("cropland", "forest", "otherland", "pasture", "urban"),
+#               lu.to            = c("cropland", "newforest", "otherland", "pasture", "urban", "forest"),
+#               stringsAsFactors = FALSE) %>%
+#     filter(!(lu.from == "forest" & lu.to == "newforest")) %>%
+#     filter(!(lu.from != "forest" & lu.to == "forest")) %>%
+#     filter(!(lu.from == lu.to)) %>%
+#     #allowed
+#     mutate(value = 0L) %>% 
+#     #not allowed
+#     mutate(value = ifelse((ns %in% (setdiff(ns_map["ns"], rest_worthy))$ns & lu.to == "newforest"), 1L, value)) 
+# )
+# 
+# ## Chaturvedi potential ----
+# 
+# results_DS_plot <- results_FABLE_NC
+# results_DS_plot$out.res <- ns_map %>% 
+#   left_join(rest_chaturvedi.df %>% filter(restoration_type == "wide_scale_restoration")) %>% 
+#   select(-ns) %>% 
+#   rename(ns = ns_int) %>% 
+#   mutate(times = 2025,
+#          lu.from = "any",
+#          lu.to = "newforest",
+#          value = area) %>% 
+#   select(ns, times, lu.from, lu.to, value)
+# 
+# results_DS_plot$out.res <- target_chaturvedi %>% 
+#   select(-ns) %>% 
+#   rename(ns = ns_int) %>% 
+#   mutate(times = 2025,
+#          lu.from = "any",
+#          lu.to = "newforest",
+#          value = restoration_area) %>% 
+#   select(ns, times, lu.from, lu.to, value)
+# 
+# plot_chaturvedi_restoration <- LUC_plot(results_DS_plot, rasterized_layer, 
+#                                     year = 2025, LU = "newforest",
+#                                     color = "Blues", label = "Restoration potential (kha):") 
+# tiff(
+#   here("Output", country, paste0(tag, "_Chaturvedi_potential_map.tiff")),
+#   units = "in", height = 6, width = 10, res = 300
+# )
+# 
+# plot_chaturvedi_restoration$LUC.plot +
+#   ggplot2::theme(legend.text = element_text(size = 14))+
+#   ggplot2::theme(legend.title = element_text(size = 16))
+# 
+# dev.off()
 
 ### Map NC Bastin and NC Bastin restriction
 
@@ -356,3 +374,25 @@ ggplot2::ggsave(
   units = "in", 
   height = 6, width = 10, dpi = 300)
 rm(plot_to_save)
+
+
+
+#### pathwaywise map for 3 pathways
+
+# results_FABLE_NC$out.res <- format_to_id_map(results_FABLE_NC, ns_map)
+# results_FABLE_CT$out.res <- format_to_id_map(results_FABLE_CT, ns_map)
+# results_FABLE_GS$out.res <- format_to_id_map(results_FABLE_GS, ns_map)
+
+results_several_pathways <- list(results_FABLE_NC, results_FABLE_CT, results_FABLE_GS)
+pathways_names <- c(  "National com.", "BAU", "Global Sust.")
+
+LUC_plot_pathways <- LUC_plot_compare_pathways(results_several_pathways, "Cropland", rasterized_layer, grid, pathways_names, label = "Area in 1000 ha per pixel")
+LUC_plot_pathways$LUC.plot
+
+ggplot2::ggsave(
+  filename = here("Output", country, paste0(tag, "2020_2050_per_pathway_cumulative_final_LUC.tiff")), 
+  plot = LUC_plot_pathways$LUC.plot+ 
+    theme(strip.text = element_text(size = 12),
+          legend.title = element_text(size = 12)), , 
+  units = "in", 
+  height = 5.5, width = 10, dpi = 300)

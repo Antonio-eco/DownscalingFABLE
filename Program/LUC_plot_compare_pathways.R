@@ -46,7 +46,7 @@ LUC_plot_compare_pathways <- function(list_res, rasterfile, grid, names, Path=NU
  
   
   plot_obj <- ggplot2::ggplot() +
-    ggplot2::geom_tile(data=plot_df, aes(x=x, y=y, fill=value, group=lu.to), alpha=0.8) +
+    ggplot2::geom_tile(data=plot_df , aes(x=x, y=y, fill=value, group=lu.to), alpha=0.8) +
     #ggplot2::scale_fill_distiller(palette = color , name=label, direction = 1)+
     ggplot2::scale_fill_gradient2(low = "red",
                                   mid = "white",
