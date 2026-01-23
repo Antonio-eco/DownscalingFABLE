@@ -1,19 +1,3 @@
-datafiles <- rbind.data.frame(
-  c("population" , "Population2020.geojson"),
-  c("protectedareas" , "ProtectedAreas.geojson"),
-  c("travel", "TravelTime.geojson"),
-  c("landcover","LandCoverHILDA2015.geojson"),
-  c("landcover","LandCoverCopernicus2019.geojson"),
-  c("landcoverchange", "LandCoverChangeHILDA2015_2019.geojson"),
-  c("forestmanagement", "ForestManagement.geojson"),
-  c("altitude", "Altitude.geojson"),
-  c("slope", "Slope.geojson"),
-  c("gaez", "GAEZCropDistribution2015.geojson"),
-  c("livestock", "GLW4WorldGriddedLivestock2020.geojson"),
-  c("ab_be_biomass", "AbovegroundBelowgroundBiomassCarbonDensity.geojson")
-) %>% 
-  setNames(c("rdataset", "filename"))
-
 
 LoadSpatialData <- function(country, datafiles){
   
@@ -33,4 +17,21 @@ LoadSpatialData <- function(country, datafiles){
   }
   
   return(spatialdata_list)
+}
+
+
+## All mapping data is stored in one excel file names "mapping_code"
+LoadMappingData <- function(filename, datafiles){
+  
+  mappingdata_list <- list()
+  
+  for(cur in seq_len(nrow(datafiles))){
+    
+    temp <-  readxl::read_excel(here("Data", paste0(filename, ".xlsx")),
+                                sheet = datafiles[cur, 2])
+    
+    mappingdata_list[[ datafiles[cur, 1] ]] <- temp
+  }
+  
+  return(mappingdata_list)
 }
