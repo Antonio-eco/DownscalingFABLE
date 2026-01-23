@@ -8,7 +8,7 @@ header-includes:
   - \DeclareUnicodeCharacter{2212}{}
 params:
   country : "IND"
-  pathway : "NC_Chaturvedi"
+  pathway : "CT_BxG"
   start_map_source : "HILDA"
   mnl_niter : 100
   mnl_nburn : 50
@@ -215,6 +215,12 @@ rest_walker.df <- rest_walker@data  %>%
 #Net Climate Impact of tree cover restoration (carbon storage and albedo change) (Mg CO2e ha-1)
 #Values are given in Mg CO2 equivalent
 
+#Fesenmyer - scenario based restoration potential area in hectares
+rest_fesenmyer <- geojson_read(here("Data", country, "RestorationFesenmyer.geojson"),  
+                                  what = "sp")
+rest_fesenmyer.df <- rest_fesenmyer@data %>% 
+  select(id_c, d0)
+
 
 
 ```
@@ -402,6 +408,8 @@ start_map_reproj <- left_join(start_map, CLC_FABLE_shares, relationship = "many-
   drop_na() %>% # Remove rows with NA values
   rename(lu.from = "lu.to") # Rename for consistency
 
+saveRDS(start_map_reproj, here("Output", country, paste0(tag, "_start_map_reproj.rds")))
+saveRDS(start_map, here("Output", country, paste0(tag, "_start_map.rds")))
 
 ```
 
@@ -415,6 +423,9 @@ ns_map <- start_map %>%
   dplyr::arrange(ns) %>%
   dplyr::mutate(ns_int = dplyr::row_number(),
                 id_c   = ns)  # convenience column for joining to sp@data$id_c
+
+saveRDS(ns_map, here("Output", country, paste0(tag, "_ns_map.rds")))
+
 
 # sanity: no duplicates
 stopifnot(!anyDuplicated(ns_map$ns))
@@ -434,6 +445,9 @@ if (anyNA(Travel@data$ns_int)) {
 
 raster_layer <- raster::raster(raster::extent(Travel), res = 0.5, crs = raster::crs(Travel))
 rasterized_layer <- raster::rasterize(Travel, raster_layer, field = "ns_int")
+
+saveRDS(rasterized_layer, here("Output", country, paste0(tag, "_rasterized_layer.rds")))
+
 
 ```
 # Checking FABLE land use change projections to downscale
@@ -1355,6 +1369,7 @@ summary(consistency_fct(alloc_agg_rest,   targ_agg))
 
 ```{r land use map, echo = FALSE, message=FALSE, fig.align = "center", fig.width=8, fig.height=8, out.width='100%'}
 # plot with consistent IDs on both sides
+# plots per year land cover per land cover type 
 LUC_plot_out <- LUC_plot(results_DS, rasterized_layer, label = "Area in 1000 ha per pixel")
 plot_to_save <- LUC_plot_out$LUC.plot +
   ggplot2::theme(legend.key.width = ggplot2::unit(0.5, "cm"),
