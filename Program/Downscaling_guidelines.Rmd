@@ -1,0 +1,70 @@
+---
+title: "Downscaling guidelines"
+author: "Clara Douzal"
+date: "2026-01-23"
+output: pdf_document
+header-includes:
+  - \DeclareUnicodeCharacter{2061}{}
+  - \DeclareUnicodeCharacter{2212}{}
+params:
+  country : "IND"
+  pathway : "CT_BxG"
+  start_map_source : "HILDA"
+  mnl_niter : 100
+  mnl_nburn : 50
+  seed : 1212
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align = "center", dpi = 150)
+
+```
+
+
+
+```{r libraries, include = FALSE}
+library(geojsonio)
+library(here)
+library(raster)
+library(dplyr)
+library(tidyr)
+library(downscalr)
+library(stringr)
+library(knitr)
+library(readr)
+library(forcats)
+library(purrr)
+library(writexl)
+library(ggplot2)
+
+if (requireNamespace("conflicted", quietly = TRUE)) {
+  conflicted::conflict_prefer("filter",    "dplyr", quiet = TRUE)
+  conflicted::conflict_prefer("select",    "dplyr", quiet = TRUE)
+  conflicted::conflict_prefer("lag",       "dplyr", quiet = TRUE)
+  conflicted::conflict_prefer("rename",    "dplyr", quiet = TRUE)
+  conflicted::conflict_prefer("left_join", "dplyr", quiet = TRUE)
+}
+```
+
+```{r setting paths, include = FALSE}
+set.seed(params$seed)
+country <- params$country
+pathway <- params$pathway
+niter   <- params$mnl_niter
+nburn   <- params$mnl_nburn
+start_map_source <- params$start_map_source
+
+dir.create(here("Output", country), showWarnings = FALSE, recursive = TRUE)
+stamp <- format(Sys.Date(), "%y%m%d")
+tag   <- paste(stamp, country, pathway, start_map_source, sep = "_")
+
+```
+
+This report is generated for **`r country`** for the pathway **`r pathway`**.
+
+```{r loading special functions, include = FALSE}
+## functions to load all the country specific data downloaded from Earth engine
+source(here("Program", "functions", "LoadData.R")
+
+
+```
