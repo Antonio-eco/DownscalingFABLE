@@ -7,8 +7,8 @@ header-includes:
   - \DeclareUnicodeCharacter{2061}{}
   - \DeclareUnicodeCharacter{2212}{}
 params:
-  country : "IND"
-  pathway : "CT_BxG"
+  country : "BRA"
+  pathway : "CurrentTrends"
   start_map_source : "HILDA"
   mnl_niter : 100
   mnl_nburn : 50
@@ -138,9 +138,9 @@ grid <- read_csv(here("Data", "global", "grid50_equal_area.csv")) %>%
 zones <- grid %>% 
   select(id_c, thermal, zone, BIOME_NAME)
 
-ab_be_biomass <- geojson_read(here("Data", country, "AbovegroundBelowgroundBiomassCarbonDensity.geojson"),  what = "sp")
-ab_be_biomass.df <- ab_be_biomass@data %>% 
-  select(-id)
+# ab_be_biomass <- geojson_read(here("Data", country, "AbovegroundBelowgroundBiomassCarbonDensity.geojson"),  what = "sp")
+# ab_be_biomass.df <- ab_be_biomass@data %>% 
+#   select(-id)
 
 #mapping
 
@@ -163,63 +163,63 @@ map_protectedareas <- readxl::read_excel(here("Data/mapping_code.xlsx"),
 
 ```{r restoration maps, include = FALSE}
 
-#mapping
-map_chaturvedi <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
-                                sheet = "Chaturvedi")
-
-#Global tree cover (existing and potential) (%) (remove existing? which map is used for existing?)
-rest_bastin <- geojson_read(here("Data", country, "GlobalTreeRestorationPotential_Bastin.geojson"),  what = "sp")
-rest_bastin.df <- rest_bastin@data  %>% 
-  filter(!is.na(mean)) %>% 
-  left_join(grid %>% select(id_c, area)) %>% 
-   mutate(rest_area = pmin(area, (mean/100)*area)) %>% 
-  select(-id) 
-
-#kilograms of CO2 equivalent per year (kgCO2e yr-1)
-#transformed into t CO2/ 1000 ha
-rest_griscom <- geojson_read(here("Data", country, "ReforestationPotential_Griscom.geojson"),  what = "sp")
-rest_griscom.df <- rest_griscom@data  %>% 
-  select(-id) %>% 
-  left_join(grid %>% select(id_c, area)) %>% 
-  mutate(p = (sum / 1000)/(1000 *area)) #p in t CO2/ 1000 ha
-
-#absolute hectare per cells
-#transformed into percentage of restoration potential type per cell
-if(country == "IND"){
-  rest_chaturvedi <- geojson_read(here("Data", country, "LandscapeRestorationOpportunities.geojson"),  
-                                  what = "sp")
- rest_chaturvedi.df <- rest_chaturvedi@data  %>% 
-  select(-id) %>% 
-  # %>% 
-  pivot_longer(-c(id_c)) %>% 
-   mutate(code = stringr::str_remove(name, "X")) %>%
-  left_join(map_chaturvedi %>% mutate(code = as.character(code))) %>% 
-   left_join(grid %>% select(id_c, area)) %>% 
-   mutate(p = pmin(100, 100 * value/area))
-}
-
-#Area with potential for forest regeneration per pixel
-#Values are given in hectares
-rest_williams <- geojson_read(here("Data", country, "PotentialForestRegenerationTropicalForest_Williams.geojson"),  
-                                  what = "sp")
-rest_williams.df <- rest_williams@data  %>% 
-  select(-id) 
-
-#Constrained unrealized potential aboveground biomass, belowground biomass, and soil organic carbon combined density under baseline climate (Mg C ha-1
-#Values are given in Mg C
-rest_walker <- geojson_read(here("Data", country, "UnrealizedPotentialIncreaseStorageCarbonLand_Walker.geojson"),  
-                                  what = "sp")
-rest_walker.df <- rest_walker@data  %>% 
-  select(-id) 
-
-#Net Climate Impact of tree cover restoration (carbon storage and albedo change) (Mg CO2e ha-1)
-#Values are given in Mg CO2 equivalent
-
-#Fesenmyer - scenario based restoration potential area in hectares
-rest_fesenmyer <- geojson_read(here("Data", country, "RestorationFesenmyer.geojson"),  
-                                  what = "sp")
-rest_fesenmyer.df <- rest_fesenmyer@data %>% 
-  select(id_c, d0)
+# #mapping
+# map_chaturvedi <- readxl::read_excel(here("Data/mapping_code.xlsx"), 
+#                                 sheet = "Chaturvedi")
+# 
+# #Global tree cover (existing and potential) (%) (remove existing? which map is used for existing?)
+# rest_bastin <- geojson_read(here("Data", country, "GlobalTreeRestorationPotential_Bastin.geojson"),  what = "sp")
+# rest_bastin.df <- rest_bastin@data  %>% 
+#   filter(!is.na(mean)) %>% 
+#   left_join(grid %>% select(id_c, area)) %>% 
+#    mutate(rest_area = pmin(area, (mean/100)*area)) %>% 
+#   select(-id) 
+# 
+# #kilograms of CO2 equivalent per year (kgCO2e yr-1)
+# #transformed into t CO2/ 1000 ha
+# rest_griscom <- geojson_read(here("Data", country, "ReforestationPotential_Griscom.geojson"),  what = "sp")
+# rest_griscom.df <- rest_griscom@data  %>% 
+#   select(-id) %>% 
+#   left_join(grid %>% select(id_c, area)) %>% 
+#   mutate(p = (sum / 1000)/(1000 *area)) #p in t CO2/ 1000 ha
+# 
+# #absolute hectare per cells
+# #transformed into percentage of restoration potential type per cell
+# if(country == "IND"){
+#   rest_chaturvedi <- geojson_read(here("Data", country, "LandscapeRestorationOpportunities.geojson"),  
+#                                   what = "sp")
+#  rest_chaturvedi.df <- rest_chaturvedi@data  %>% 
+#   select(-id) %>% 
+#   # %>% 
+#   pivot_longer(-c(id_c)) %>% 
+#    mutate(code = stringr::str_remove(name, "X")) %>%
+#   left_join(map_chaturvedi %>% mutate(code = as.character(code))) %>% 
+#    left_join(grid %>% select(id_c, area)) %>% 
+#    mutate(p = pmin(100, 100 * value/area))
+# }
+# 
+# #Area with potential for forest regeneration per pixel
+# #Values are given in hectares
+# rest_williams <- geojson_read(here("Data", country, "PotentialForestRegenerationTropicalForest_Williams.geojson"),  
+#                                   what = "sp")
+# rest_williams.df <- rest_williams@data  %>% 
+#   select(-id) 
+# 
+# #Constrained unrealized potential aboveground biomass, belowground biomass, and soil organic carbon combined density under baseline climate (Mg C ha-1
+# #Values are given in Mg C
+# rest_walker <- geojson_read(here("Data", country, "UnrealizedPotentialIncreaseStorageCarbonLand_Walker.geojson"),  
+#                                   what = "sp")
+# rest_walker.df <- rest_walker@data  %>% 
+#   select(-id) 
+# 
+# #Net Climate Impact of tree cover restoration (carbon storage and albedo change) (Mg CO2e ha-1)
+# #Values are given in Mg CO2 equivalent
+# 
+# #Fesenmyer - scenario based restoration potential area in hectares
+# rest_fesenmyer <- geojson_read(here("Data", country, "RestorationFesenmyer.geojson"),  
+#                                   what = "sp")
+# rest_fesenmyer.df <- rest_fesenmyer@data %>% 
+#   select(id_c, d0)
 
 
 
@@ -425,31 +425,113 @@ ns_map <- start_map %>%
                 id_c   = ns)  # convenience column for joining to sp@data$id_c
 
 saveRDS(ns_map, here("Output", country, paste0(tag, "_ns_map.rds")))
-
-
-# sanity: no duplicates
-stopifnot(!anyDuplicated(ns_map$ns))
-
-# === rasterize *now* (doesn't need results yet) ===
-# make sure Travel has id_c and same CRS
-Travel@data <- Travel@data %>%
-  dplyr::mutate(id_c = as.character(id_c)) %>%
-  dplyr::left_join(ns_map, by = "id_c")
-
-# fail fast if some polygons aren't in the map
-if (anyNA(Travel@data$ns_int)) {
-  missing <- unique(Travel@data$id_c[is.na(Travel@data$ns_int)])
-  stop(sprintf("Travel polygons not found in ns_map (n=%d). Example: %s",
-               length(missing), paste(head(missing, 5), collapse=", ")))
-}
-
-raster_layer <- raster::raster(raster::extent(Travel), res = 0.5, crs = raster::crs(Travel))
-rasterized_layer <- raster::rasterize(Travel, raster_layer, field = "ns_int")
-
-saveRDS(rasterized_layer, here("Output", country, paste0(tag, "_rasterized_layer.rds")))
+# 
+# 
+# # sanity: no duplicates
+# stopifnot(!anyDuplicated(ns_map$ns))
+# 
+# # === rasterize *now* (doesn't need results yet) ===
+# # make sure Travel has id_c and same CRS
+# # Travel@data <- Travel@data %>%
+# #   dplyr::mutate(id_c = as.character(id_c)) %>%
+# #   dplyr::left_join(ns_map, by = "id_c")
+# 
+# # fail fast if some polygons aren't in the map
+# if (anyNA(Travel@data$ns_int)) {
+#   missing <- unique(Travel@data$id_c[is.na(Travel@data$ns_int)])
+#   stop(sprintf("Travel polygons not found in ns_map (n=%d). Example: %s",
+#                length(missing), paste(head(missing, 5), collapse=", ")))
+# }
+# 
+# raster_layer <- raster::raster(raster::extent(Travel), res = 0.5, crs = raster::crs(Travel))
+# rasterized_layer <- raster::rasterize(Travel, raster_layer, field = "ns_int")
+# 
+# saveRDS(rasterized_layer, here("Output", country, paste0(tag, "_rasterized_layer.rds")))
 
 
 ```
+
+```{r}
+make_id_raster <- function(Travel_sp, ns_map,
+                           keep_ns_int,
+                           res_km = 5) {
+
+  # --- clean ns_map ---
+  ns_map <- ns_map %>%
+    dplyr::mutate(
+      id_c   = as.character(id_c),
+      ns_int = as.integer(ns_int)
+    ) %>%
+    dplyr::distinct(id_c, ns_int)
+
+  # --- attach ns_int to Travel ---
+  Travel_sp@data <- as.data.frame(Travel_sp@data)
+  Travel_sp@data$id_c <- as.character(Travel_sp@data$id_c)
+
+  Travel_sp@data <- Travel_sp@data %>%
+    dplyr::select(-dplyr::any_of(c("ns_int","ns_int.x","ns_int.y"))) %>%
+    dplyr::left_join(ns_map, by = "id_c") %>%
+    as.data.frame()
+
+  # --- keep only valid cells ---
+  Travel_sp <- Travel_sp[Travel_sp@data$ns_int %in% keep_ns_int, ]
+  Travel_sp@data <- as.data.frame(Travel_sp@data)
+
+  # --- rasterize with terra ---
+  v <- terra::vect(Travel_sp)
+  v <- terra::project(v, "EPSG:6933")   # equal-area
+
+  r <- terra::rast(
+    terra::ext(v),
+    resolution = res_km * 1000,
+    crs = terra::crs(v)
+  )
+
+  terra::rasterize(
+    v, r,
+    field   = "ns_int",
+    touches = TRUE
+  )
+}
+
+# keep only cells with valid travel time
+keep_id_c <- Travel@data %>%
+  dplyr::mutate(id_c = as.character(id_c)) %>%
+  dplyr::filter(!is.na(MeanTravelTime)) %>%
+  dplyr::pull(id_c) %>%
+  unique()
+
+keep_ns_int <- ns_map %>%
+  dplyr::mutate(id_c = as.character(id_c)) %>%
+  dplyr::filter(id_c %in% keep_id_c) %>%
+  dplyr::pull(ns_int) %>%
+  unique()
+
+rasterized_layer <- make_id_raster(
+  Travel,
+  ns_map,
+  keep_ns_int = keep_ns_int,
+  res_km = 5
+)
+
+# df_map <- terra::as.data.frame(rasterized_layer, xy = TRUE, na.rm = FALSE)
+# names(df_map)[3] <- "ns_int"
+
+terra::writeRaster(
+  rasterized_layer,
+  here("Output", country, paste0(tag, "_rasterized_layer.tif")),
+  overwrite = TRUE
+)
+
+
+grid_sf <- sf::st_as_sf(Travel) %>%
+  dplyr::select(id_c) %>%        # keep only ID
+  sf::st_make_valid()
+
+saveRDS(grid_sf, here("Output", country, paste0(tag, "_grid_sf.rds")))
+```
+
+
 # Checking FABLE land use change projections to downscale
 
 Check in the table below that in the land use changes projected in your calculator, all land cover of interest and all transitions are included in the land transition matrix.
@@ -811,12 +893,12 @@ for (cur_LU.from in origins) {
   Yfull[is.na(Yfull)] <- 0
 
   # drop destination columns that are all zero
-  keep_dest <- which(colSums(Yfull) > 0)
-  if (length(keep_dest) < 2L) {
-    message("Skipping origin '", cur_LU.from, "': fewer than 2 non-zero destinations.")
-    next
-  }
-  Y <- as.matrix(Yfull[, keep_dest, drop = FALSE])
+  # keep_dest <- which(colSums(Yfull) > 0)
+  # if (length(keep_dest) < 2L) {
+  #   message("Skipping origin '", cur_LU.from, "': fewer than 2 non-zero destinations.")
+  #   next
+  # }
+  # Y <- as.matrix(Yfull[, keep_dest, drop = FALSE])
 
   # subset X rows and drop collinear columns for this subset
   X <- X0[rownames(Y), , drop = FALSE]
@@ -846,7 +928,8 @@ for (cur_LU.from in origins) {
   # posterior means -> long coef table
   post <- tmp$postb
   # drop baseline column in postb
-  Bmean <- as.data.frame(apply(post[, -baseline, , drop = FALSE], c(1,2), mean))
+  Bmean <- as.data.frame(apply(post[, ,#-baseline, 
+                                    , drop = FALSE], c(1,2), mean))
   coef_long <- Bmean %>%
     tibble::rownames_to_column("ks") %>%
     tidyr::pivot_longer(-ks, names_to = "lu.to", values_to = "value") %>%
