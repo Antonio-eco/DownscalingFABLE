@@ -1,19 +1,23 @@
 #wrangle for plot
 
-#Make the results use the same integer codes for plotting as standardized raster
-
-format_to_id_map <- function(res, ns_map){
+# -----------------------------------------------------------------------------
+# format_to_id_map()
+# Why:
+# - downscalR and your tables sometimes use "ns" as a character id (id_c).
+# - For raster painting you use an integer id (ns_int) stored in raster cells.
+# This helper converts res$out.res$ns (character) -> integer ns_int consistently.
+# -----------------------------------------------------------------------------
+format_to_id_map <- function(res, ns_map) {
   
   temp <- res$out.res
   
-  formated <- temp %>%
+  formatted <- temp %>%
     dplyr::mutate(ns = as.character(ns)) %>%
     dplyr::left_join(ns_map %>% dplyr::select(ns, ns_int), by = "ns") %>%
     dplyr::mutate(ns = ns_int) %>%
     dplyr::select(-ns_int)
   
-  return(formated)
-  
+  formatted
 }
 
 
