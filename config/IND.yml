@@ -1,0 +1,19 @@
+country: "IND"
+pathway: "CurrentTrends"
+start_map_source: "HILDA"
+
+# folders (workflow controls paths; package never uses here())
+data_root: "Data"
+output_root: "Output"
+
+# run identity for filenames
+stamp: "260204"
+
+# modeling
+seed: 1212
+mnl_niter: 100
+mnl_nburn: 50
+
+# mapping / rasterization
+crs_equal_area: 6933
+pixel_res_m: 50000   # set to 10000 if 10 km resolution or 1000 if 1km resolution
