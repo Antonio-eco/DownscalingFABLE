@@ -6,4 +6,12 @@
 Program/Downscaling_report.pdf
 Program/check/
 Data/global/
-Output/IND
+Data/
+Output/
+*.tif
+*.geojson
+archive/
+/Program/Downscaling_report_files/figure-latex/
+Program/Downscaling_report_cache/
+Documents/
+Program/
