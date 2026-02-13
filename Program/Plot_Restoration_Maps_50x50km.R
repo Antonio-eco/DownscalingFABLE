@@ -183,6 +183,8 @@ grid <- readr::read_csv(here("Data", "global", "grid50_equal_area.csv")) %>%
   dplyr::mutate(id_c = as.character(id_c))
 
 FABLE_CT <- readr::read_rds(here("Output", country, paste0(tag, "_FABLE.rds")))
+FABLE_Bastin <- readr::read_rds(here("Output", country, paste0("251217_IND_CT_Bastin_HILDA", "_FABLE.rds")))
+FABLE_Chaturvedi <- readr::read_rds(here("Output", country, paste0("251021_IND_NC_Chaturvedi_HILDA", "_FABLE.rds")))
 
 # =============================================================================
 # Run downscale (only to obtain the standard results object structure)
@@ -191,7 +193,9 @@ FABLE_CT <- readr::read_rds(here("Output", country, paste0(tag, "_FABLE.rds")))
 # We only need a downscalR-like container (res$out.res) to reuse plotting tools.
 
 pathways <- list(
-  FABLE_CT = FABLE_CT %>% dplyr::filter(times >= 2020)
+  FABLE_CT = FABLE_CT %>% dplyr::filter(times >= 2020),
+  FABLE_Bastin = FABLE_Bastin %>% dplyr::filter(times >= 2020),
+  FABLE_Chaturvedi = FABLE_Chaturvedi %>% dplyr::filter(times >= 2020)
 )
 
 results_by_pathway <- purrr::imap(pathways, function(targets, nm) {
@@ -209,7 +213,8 @@ results_by_pathway <- purrr::imap(pathways, function(targets, nm) {
 })
 
 results_FABLE_CT <- results_by_pathway$FABLE_CT
-
+results_FABLE_Bastin <- results_by_pathway$FABLE_Bastin
+results_FABLE_Chaturvedi <- results_by_pathway$FABLE_Chaturvedi
 # =============================================================================
 # Restoration maps: build country-adaptive “specs”
 # =============================================================================
@@ -331,6 +336,37 @@ if (length(restoration_specs) == 0) {
 }
 
 
+
+# ---- start map ----
+# startmap.df <- `260129_IND_CurrentTrends_HILDA_start_map` %>% 
+#   rename(id_c = ns) %>% 
+#   left_join(ns_map) %>% 
+#   select(-c(ns, id_c)) %>% 
+#   rename(ns = ns_int) %>% 
+#   rename(lu.to = lu.from) %>% 
+#   mutate(times = 2020)
+# 
+# results_startmap <- results_FABLE_CT
+# results_startmap$out.res <- startmap.df
+#  
+# p1 <- LUC_plot(results_startmap, rasterized_layer)
+# p1 <- p1$LUC.plot +
+#   make_color_scale(limits = c(0, 250), label = "Area in ha per pixel")
+# 
+# startmapreproj.df <- `260129_IND_CurrentTrends_HILDA_start_map_reproj` %>% 
+#   rename(id_c = ns) %>% 
+#   left_join(ns_map) %>% 
+#   select(-c(ns, id_c)) %>% 
+#   rename(ns = ns_int) %>% 
+#   rename(lu.to = lu.from) %>% 
+#   mutate(times = 2020)
+# 
+# results_startmapreproj <- results_FABLE_CT
+# results_startmapreproj$out.res <- startmapreproj.df
+# 
+# p2 <- LUC_plot(results_startmapreproj, rasterized_layer)
+# p2 <- p2$LUC.plot +
+#   make_color_scale(limits = c(0, 250), label = "Area in ha per pixel")
 # =============================================================================
 # Convert all restoration datasets into results objects + compute shared limits
 # =============================================================================
