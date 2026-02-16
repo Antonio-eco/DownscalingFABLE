@@ -1,6 +1,6 @@
 # 🌍 FABLE Spatial Downscaling Workflow
 
-This repository contains the workflow used to run the spatial downscaling of land-use scenarios from the FABLE Calculator using the FABLEDownscalR package.
+This repository contains the workflow used to run the spatial downscaling of land-use scenarios from the FABLE Calculator using the [FABLEDownscalR](https://github.com/FABLE-consortium/FABLEDownscalR) package.
 
 It is designed so that country teams can:
   * Run the full downscaling for their country
