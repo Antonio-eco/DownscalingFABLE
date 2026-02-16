@@ -10,7 +10,7 @@ library(dplyr)
 
 # (2) Read config (you can implement fdr_read_yaml in the package)
 cfg <- fdr_read_config(here::here("config", "IND.yml"))
-
+cfg$stamp <- format(Sys.Date(), "%y%m%d")
 set.seed(cfg$seed)
 
 # (3) Load raw inputs (geojson + mapping + grid + FABLE)
