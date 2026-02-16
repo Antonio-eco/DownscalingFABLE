@@ -48,6 +48,10 @@ remotes::install_github("FABLE-consortium/FABLEDownscalR")
 ```
 ## 📁 Data Preparation
 
+Each country team must prepare a standardized data folder before running the downscaling workflow.
+
+All inputs must follow the structure below so that the FABLEDownscalR package can load them automatically.
+
 1️⃣ Folder Structure
 
 Inside the repository, create:  ```Data/<COUNTRY_CODE>/```
@@ -75,10 +79,57 @@ Each country folder must contain:
 
 ⚠️ Filenames must match exactly.
 
+### Spatial files
+
 All spatial files must contain a column called:
  id_c 
 which uniquely identifies grid cells.
 
+### FABLE Calculator Outputs (FABLE.xlsx)
+
+Each country must provide national land-use projections.
+
+Location: ```Data/<COUNTRY>/FABLE.xlsx```
+
+Example: ````Data/IND/FABLE.xlsx````
+
+#### Required Sheets
+1) Baseline
+
+Contains national baseline areas.
+
+| LandCover | value |
+| --------- | ----- |
+| forest    | 25000 |
+| cropland  | 18000 |
+
+2) Pathway Sheets
+
+One sheet per pathway:
+````
+CurrentTrends
+Sustainable
+HighAmbition
+````
+
+Each sheet must contain:
+
+| Column        | Description        |
+| ------------- | ------------------ |
+| LandCoverInit | Initial land cover |
+| YearStart     | Start year         |
+| YearEnd       | End year           |
+| ToForest      | → Forest           |
+| ToOtherLand   | → Other land       |
+| ToCropland    | → Cropland         |
+| ToPasture     | → Pasture          |
+| ToUrban       | → Urban            |
+| ToNewForest   | → New forest       |
+
+These are copied from:
+````
+FABLE-C → Sheet: 4_calc_land → Table: calc_landmatrix
+````
 ## ⚙️ Configuration
 
 1️⃣ Create a Config File
