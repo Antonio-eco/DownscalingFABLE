@@ -6,7 +6,10 @@
 Program/Downscaling_report.pdf
 Program/check/
 Data/global/
-Data/
+Data/BRA/
+Data/IND/
+Data/GBR/
+Data/ARG/
 Output/
 *.tif
 *.geojson
