@@ -98,10 +98,14 @@ Example: ````Data/IND/FABLE.xlsx````
 
 Contains national baseline areas.
 
-| LandCover | value |
-| --------- | ----- |
-| forest    | 25000 |
-| cropland  | 18000 |
+| LandCover     | value |
+| ------------- | ----- |
+| forest        | 25000 |
+| cropland      | 18000 |
+| pasture       | 16000 |
+| urban         | 2000  |
+| newforest     | 5000  |
+| not relevant  | 4000  |
 
 2) Pathway Sheets
 
