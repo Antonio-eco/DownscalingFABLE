@@ -1,15 +1,16 @@
-### raw script from GPT
-
 # DownscalingFABLE/R/run_country.R
+
+# run once
+#install.packages("remotes")
+remotes::install_github("FABLE-consortium/FABLEDownscalR")
 
 # (1) Load your package (devtools::load_all is done by .Rprofile)
 library(FABLEDownscalR)
 library(dplyr)
-#library(tidyr)
 
 
 # (2) Read config (you can implement fdr_read_yaml in the package)
-cfg <- fdr_read_config(here::here("config", "IND.yml"))
+cfg <- fdr_read_config(here::here("config", "ETH.yml"))
 cfg$stamp <- format(Sys.Date(), "%y%m%d")
 set.seed(cfg$seed)
 
