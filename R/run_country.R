@@ -76,3 +76,11 @@ fdr_save_outputs(
 )
 
 message("✅ Done: ", cfg$country, " (", cfg$pathway, ")")
+
+p <- fdr_plot_downscaled_maps(
+  out_res = results$out.res,                 # or res$downscaled_LUC if you keep that
+  rasterized_layer = id$rasterized_layer,
+  ns_map = id$ns_map              
+)
+
+print(p)
