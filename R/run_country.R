@@ -2,10 +2,6 @@
 
 renv::restore()
 
-# run once
-#install.packages("remotes")
-remotes::install_github("FABLE-consortium/FABLEDownscalR", dependencies = TRUE)
-
 # (1) Load your package (devtools::load_all is done by .Rprofile)
 library(FABLEDownscalR)
 library(dplyr)
