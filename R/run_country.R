@@ -1,14 +1,17 @@
 # DownscalingFABLE/R/run_country.R
 
-renv::restore()
+#renv::restore()
+
+remotes::install_github("FABLE-consortium/FABLEDownscalR", dependencies = TRUE)
 
 # (1) Load your package (devtools::load_all is done by .Rprofile)
 library(FABLEDownscalR)
 library(dplyr)
+library(here)
 
 
 # (2) Read config (you can implement fdr_read_yaml in the package)
-cfg <- fdr_read_config(here::here("config", "ETH.yml"))
+cfg <- fdr_read_config(here::here("config", "IND.yml"))
 cfg$stamp <- format(Sys.Date(), "%y%m%d")
 set.seed(cfg$seed)
 
@@ -74,11 +77,46 @@ fdr_save_outputs(
 )
 
 message("✅ Done: ", cfg$country, " (", cfg$pathway, ")")
+# 
+# p <- fdr_plot_downscaled_maps(
+#   out_res = results$out.res,                 # or res$downscaled_LUC if you keep that
+#   rasterized_layer = id$rasterized_layer,
+#   ns_map = id$ns_map              
+# )
+# 
+# print(p)
 
-p <- fdr_plot_downscaled_maps(
-  out_res = results$out.res,                 # or res$downscaled_LUC if you keep that
+p_main_LU <- fdr_plot_downscaled_LU_one(
+  out_res          = results$out.res, 
   rasterized_layer = id$rasterized_layer,
-  ns_map = id$ns_map              
+  ns_map           = id$ns_map)
+
+ggplot2::ggsave(
+  filename = here("Output", cfg$country, paste0("MainLU_", cfg$pathway, ".tiff")), 
+  plot = p_main_LU, 
+  units = "in", 
+  height = 10, width = 10, dpi = 300)
+
+p_LU <- fdr_plot_downscaled_LU(
+  out_res          = results$out.res, 
+  rasterized_layer = id$rasterized_layer,
+  ns_map           = id$ns_map
 )
 
-print(p)
+ggplot2::ggsave(
+  filename = here("Output", cfg$country, paste0("LU_", cfg$pathway, ".tiff")), 
+  plot = p_LU, 
+  units = "in", 
+  height = 10, width = 10, dpi = 300)
+
+p_LUC <- fdr_plot_downscaled_LUC(
+  out_res          = results$out.res, 
+  rasterized_layer = id$rasterized_layer,
+  ns_map           = id$ns_map
+)
+
+ggplot2::ggsave(
+  filename = here("Output", cfg$country, paste0("LUC_", cfg$pathway, ".tiff")), 
+  plot = p_LUC, 
+  units = "in", 
+  height = 10, width = 10, dpi = 300)
