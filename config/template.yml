@@ -1,6 +1,6 @@
 country: "IND"
 pathway: "CurrentTrends"
-start_map_source: "HILDA"
+start_map_source: "HILDA", e.g "MapBiomas"
 
 # folders (workflow controls paths; package never uses here())
 data_root: "Data"
