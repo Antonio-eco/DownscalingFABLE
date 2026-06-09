@@ -27,7 +27,7 @@ inputs <- fdr_load_inputs(
 luc <- lc_build_country_luc(
   LandCoverChange_df = inputs$spatial$landcoverchange,
   map_HILDA_LUC      = inputs$mapping$map_LUC,
-  Ts                 = 2015
+  Ts                 = 2015 # year and expected_lu could be changed accordingly to land use map
 )
 
 # (5) Harmonise start map to match FABLE baseline totals
@@ -52,8 +52,8 @@ priors <- fdr_build_priors(
 )
 
 # (8) Fit MNL + downscale
-results <- fdr_run_downscaling(
-  targets      = fdr_wrangle_fable_targets(inputs$FABLE_targets, min_year = 2020),
+results <- fdr_run_downscaling( # not clear if restrictions are applied as the call in results <- downscalr::downscale is missing restrictions = NULL
+  targets      = fdr_wrangle_fable_targets(inputs$FABLE_targets, min_year = 2020), # why is min_year set at 2020 if FABLE data goes back to 2000
   country_luc  = luc$country_luc,
   priors       = priors,
   mnl_niter    = cfg$mnl_niter,
