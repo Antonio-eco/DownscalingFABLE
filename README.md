@@ -9,7 +9,7 @@ It is designed so that country teams can:
     
 No modification of the package code is required.
 
-You can find the full guidelines to downscale FABLE-C land-use-change projections [here](https://www.dropbox.com/scl/fi/8qzsgg22jr7xwya9oqshd/260825_Guidelines_for_Using_DownscalR_with_FABLE-C.pdf?rlkey=a3fbq0zur65n6tihxlcq28nzj&dl=0).
+You can find the full guidelines to downscale FABLE-C land-use-change projections [here](https://zenodo.org/records/22764685).
 
 
 ## 📦 Related Repository
