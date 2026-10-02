@@ -1,13 +1,7 @@
 # 🌍 FABLE Spatial Downscaling Workflow
+# FABLE Brazil Team specific changes #
 
-This repository contains the workflow used to run the spatial downscaling of land-use scenarios from the FABLE Calculator using the [FABLEDownscalR](https://github.com/FABLE-consortium/FABLEDownscalR) package.
-
-It is designed so that country teams can:
-  * Run the full downscaling for their country
-  * Use their own national spatial data
-  * Produce harmonized, spatially explicit land-use projections
-    
-No modification of the package code is required.
+This repository contains the workflow used to document and run the spatial downscaling of land-use scenarios from the FABLE Calculator using the [FABLEDownscalR](https://github.com/FABLE-consortium/FABLEDownscalR) package, specifically for Brazil's case.
 
 You can find the full guidelines to downscale FABLE-C land-use-change projections [here](https://zenodo.org/records/22764685).
 
@@ -58,7 +52,7 @@ All inputs must follow the structure below so that the FABLEDownscalR package ca
 
 Inside the repository, create:  ```Data/<COUNTRY_CODE>/```
 
-Example:  ```Data/IND/```
+Example:  ```Data/BRA/```
 
 2️⃣ Required Files
 
@@ -70,8 +64,8 @@ Each country folder must contain:
 | `Population2020.geojson`                | Population data                  |
 | `ProtectedAreas.geojson`                | Protected areas                  |
 | `TravelTime.geojson`                    | Travel time                      |
-| `LandCoverESACCI2015.geojson`           | initial land cover (ESACCI)      |
-| `LandCoverESACCI2020.geojson`           | starting land cover (ESACCI)     |
+| `LandCoverHILDA2015.geojson`            | initial land cover (HILDA)      |
+| `LandCoverHILDA2020.geojson`            | starting land cover (HILDA)     |
 | `LandCoverChangeHILDA2015_2020.geojson` | Historical Land-use transitions  |
 | `ForestManagement.geojson`              | Forest management                |
 | `Altitude.geojson`                      | Altitude                         |
@@ -93,7 +87,7 @@ Each country must provide national land-use projections.
 
 Location: ```Data/<COUNTRY>/FABLE.xlsx```
 
-Example: ````Data/IND/FABLE.xlsx````
+Example: ````Data/BRA/FABLE.xlsx````
 
 #### Required Sheets
 1) Baseline
@@ -113,9 +107,8 @@ Contains national baseline areas.
 
 One sheet per pathway:
 ````
-CurrentTrends
-Sustainable
-HighAmbition
+CT (Current Trends)
+NDC (Nationally Determined Contributions)
 ````
 
 Each sheet must contain:
@@ -148,13 +141,13 @@ template.yml
 ```
 3️⃣Rename it, for example:
 ```
-IND.yml
+BRA.yml
 ```
 4️⃣Edit the Config File
 
 Example:
 ```r
-country: "IND"
+country: "BRA"
 pathway: "CurrentTrends"
 start_map_source: "HILDA"
 
@@ -165,7 +158,7 @@ seed: 1234
 mnl_niter: 100
 mnl_nburn: 50
 
-crs_equal_area: 6933
+crs_equal_area: 4326
 pixel_res_m: 50000
 ```
 Main Parameters
@@ -173,7 +166,7 @@ Main Parameters
 | ------------------ | ------------------------------------------ |
 | `country`          | ISO3 country code                          |
 | `pathway`          | FABLE scenario                             |
-| `start_map_source` | ESACCI (HILDA or Copernicus)               |
+| `start_map_source` | HILDA (ESACCI or Copernicus)               |
 | `pixel_res_m`      | Raster resolution (50000 / 10000 / 1000 m) |
 Dates and output tags are generated automatically.
 
@@ -233,7 +226,7 @@ Once the working directory is correctly set:
 ```r
 source("R/run_country.R")
 ```
-Replace IND.yml with your configuration file.
+Replace .yml file with your configuration file.
 
 📤 Outputs
 Results are saved in:
@@ -242,7 +235,7 @@ Output/<COUNTRY_CODE>/
 ```
 Example:
 ```
-Output/IND/
+Output/BRA/
 ```
 This folder contains:
   * Harmonized baseline maps
