@@ -245,6 +245,35 @@ This folder contains:
   * Intermediate datasets
 These outputs are ready for mapping and analysis.
 
+## ▶️ Changing land use files
+
+Land use geojson files can also be changed by reading any geojson file through sf and class names modified to fit FABLE's nomenclature
+
+Changes are described in geojson_changes
+
+```r
+source("R/geojson_changes.R")
+```
+
+## ▶️ Adding protected area restrictions
+
+Protected areas were also implemented in the downscale function by adding a restrictions argument in the function and the run_downscale.R file
+These are also implemented in the run_country.R file
+
+
+```r
+source("R/run_downscale_restricted.R")
+```
+
+## ▶️ Land use area visualization with terra
+
+Land use area plots visualized with terra were also implemented in order to better compare different land use classes, so these classes were in the same scale
+
+
+```r
+source("R/terra_plots.R")
+```
+
 ## ⚠️ Common Issues
 
 1) **Missing Files**
