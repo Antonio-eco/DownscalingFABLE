@@ -64,8 +64,8 @@ Each country folder must contain:
 | `Population2020.geojson`                | Population data                  |
 | `ProtectedAreas.geojson`                | Protected areas                  |
 | `TravelTime.geojson`                    | Travel time                      |
-| `LandCoverHILDA2015.geojson`            | initial land cover (HILDA)      |
-| `LandCoverHILDA2020.geojson`            | starting land cover (HILDA)     |
+| `LandCoverHILDA2015.geojson`            | initial land cover (MapBiomas but renamed HILDA to be readable by existing code)      |
+| `LandCoverHILDA2020.geojson`            | starting land cover (MapBiomas but renamed HILDA to be readable by existing code)     |
 | `LandCoverChangeHILDA2015_2020.geojson` | Historical Land-use transitions  |
 | `ForestManagement.geojson`              | Forest management                |
 | `Altitude.geojson`                      | Altitude                         |
