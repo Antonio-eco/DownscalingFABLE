@@ -1,315 +1,88 @@
-# 🌍 FABLE Spatial Downscaling Workflow
-# FABLE Brazil Team specific changes #
+# 🌍 FABLE Spatial Downscaling — Brazil Run Script (`run_country_changes.R`)
 
-This repository contains the workflow used to document and run the spatial downscaling of land-use scenarios from the FABLE Calculator using the [FABLEDownscalR](https://github.com/FABLE-consortium/FABLEDownscalR) package, specifically for Brazil's case.
+This document explains, in plain language, what `run_country_changes.R` actually does, and how it differs from the standard workflow described in the project's main `README.md`.
 
-You can find the full guidelines to downscale FABLE-C land-use-change projections [here](https://zenodo.org/records/22764685).
+> **Bottom line:** this is not a generic "run any country" script anymore. It is a **Brazil-specific working script** that bolts a bug fix, several manual overrides, and two new analysis steps (carbon emissions + results verification) onto the standard FABLE downscaling workflow. Several of its inputs point to files on one person's computer rather than the shared `Data/<COUNTRY>/` folder, so as written it will not run as-is on another machine.
 
+------------------------------------------------------------------------
 
-## 📦 Related Repository
+## 1. What the script does, step by step
 
-This workflow relies on the companion package:
+| \# | Step | Plain-language description |
+|------------|------------|------------------------------------------------|
+| 0 | **Bug fix (patch)** | Before anything else runs, the script repairs a known bug in the underlying `downscalr` package (an error that occurs in rare edge cases during bias correction) by replacing the faulty function in memory. No files are permanently changed — the fix only applies while this script is running. |
+| 1 | **Load packages** | Loads the FABLE downscaling package plus several mapping/formatting packages (for country borders, pretty charts, and country-code lookups). |
+| 2 | **Read configuration** | Reads settings from a config file — but the file is hardcoded to `BRA.yml` (Brazil) rather than being easily swapped. |
+| 3 | **Prepare country information** | Looks up Brazil's official name and border shape, used later for mapping/context. |
+| 4–6 | **Load & harmonize data** | Loads Brazil's spatial and FABLE Calculator data, builds the historical land-cover-change table, and adjusts ("harmonizes") the starting land-cover maps so they match the official FABLE national totals. |
+| 7 | **Build the prediction grid** | Converts the country's grid cells into a standard raster layer at the resolution set in the config file. |
+| 8 | **Build model inputs ("priors")** | Builds the table of landscape characteristics (travel time, population, livestock, crop yield, etc.) used to predict where land-use change is likely to happen, keeping only valid grid cells. |
+| 9 | **Set land-use restrictions** | Loads a separate Protected Areas spreadsheet and flags any grid cell overlapping a protected area so that Forest cannot convert to Cropland or Pasture there. |
+| 10 | **Manual target harmonization** | Rescales certain land-use totals (forest, pasture, cropland, other land, urban) to match manually specified target figures. |
+| 11 | **Fit the statistical model** | For each land-use class, fits a model predicting where that land is likely to change, using Brazil's historical data and the landscape characteristics from step 8. |
+| 12 | **Blend in a "flat" prior** | Mixes in a simple, uniform assumption (land change is equally likely everywhere) with the statistical model's predictions, to prevent a handful of unusual grid cells from dominating the results. |
+| 13 | **Run the spatial allocation ("downscaling")** | Combines the national FABLE targets, the statistical model, the flat-prior blend, and the protected-area restrictions to spatially distribute Brazil's projected land-use change across the grid, year by year. |
+| 14 | **Estimate greenhouse-gas emissions from land-use change** | Using separate carbon-stock data, calculates the CO₂-equivalent emissions (or removals) associated with each land conversion, for example when forest is cleared or new forest grows back. |
+| 15 | **Save outputs** | Writes all key results (maps, model coefficients, downscaled projections, emissions) to the standard `Output/<COUNTRY>/` folder. |
+| 16 | **Verify the results** | Automatically checks that the areas reported at the end of one time period match the areas reported at the start of the next, and that gains/losses add up correctly — flags any mismatches. |
+| 17 | **Summarize total area over time** | Produces a simple year-by-year table of total area by land-use class, so results can be sanity-checked at a glance. |
 
-👉 FABLEDownscalR
-https://github.com/FABLE-consortium/FABLEDownscalR
+------------------------------------------------------------------------
 
-You do not need to edit this package.
+## 2. Key differences from the main project README
 
+The original `README.md` describes a **generic, reusable workflow**: any country team drops its files into `Data/<COUNTRY_CODE>/`, fills in a config file, and runs `source("R/run_country.R")`. This script deviates from that in several important ways:
 
-## ✅ Requirements
+### 🔧 Added a package bug fix
 
-Before starting, make sure you have:
-  * R (≥ 4.2)
-    https://cran.r-project.org
-  * RStudio (recommended)
-    https://posit.co/download/rstudio-desktop/
+- The script includes a **runtime patch** for a bug in the `downscalr` package's bias-correction function (it can crash in a specific edge case). This fix is not mentioned anywhere in the original README and is not part of a package release — it's applied fresh each time the script runs.
 
-## 🚀 Installation
+### 🇧🇷 Hardcoded to one country, not configurable "out of the box"
 
-1️⃣ Download the Workflow
+- `config_file <- "BRA.yml"` is hardcoded, rather than something easily swapped per the README's "replace IND.yml with your configuration file" instruction.
+- A Brazil-specific FABLE sheet name (`"CT"`) and class-name translations (Forest → forest, etc.) are written directly into the script.
 
-In RStudio, run:
-```r
-install.packages("usethis")
-usethis::create_from_github("FABLE-consortium/DownscalingFABLE")
-```
-Or download directly from GitHub.
+### 📁 Uses files outside the standard `Data/<COUNTRY>/` folder
 
-2️⃣ Install the Package
+- Two inputs are read from **absolute paths on one person's computer** (`C:/Users/User/Desktop/...`), not from the shared `Data/BRA/` folder the README specifies:
+  - A carbon-stock dataset (`grid50_carbon_stocks.rds`)
+  - A Protected Areas spreadsheet (`Areas_Protegidas_FABLE.xls`)
+- This means the script **will not run for another team member** without adjusting those paths — it is not yet "packaged" the way the README describes for general use.
 
-Install the analysis package once:
-```r
-install.packages("remotes")
-remotes::install_github("FABLE-consortium/FABLEDownscalR")
-```
-## 📁 Data Preparation
+### 🎯 Manual, hardcoded overrides not documented in the README
 
-Each country team must prepare a standardized data folder before running the downscaling workflow.
+- A set of **manual target totals** for forest, pasture, cropland, other land, and urban areas is hardcoded into the script (`HARMONIZE_TARGETS`) and used to rescale the model's starting values. This kind of manual adjustment isn't part of the documented workflow.
+- Custom **model-sensitivity settings** (`A0_PER_COVARIATE`) are hardcoded for specific landscape variables (travel time, livestock, population, crop yield) to prevent a few extreme data points from distorting results — a refinement added to address a specific accuracy issue observed during testing.
+- A **"flat prior" blend** (`PRIOR_WEIGHT = 0.7`) is introduced, mixing the statistical model's predictions with a simple uniform assumption. This is a new modeling choice not mentioned in the README.
 
-All inputs must follow the structure below so that the FABLEDownscalR package can load them automatically.
+### 🌱 New step: greenhouse-gas emissions calculation
 
-1️⃣ Folder Structure
+- The script adds an entirely new analysis step that was **not described in the original README at all**: estimating CO₂-equivalent emissions or removals from each land-use change, using an external carbon-stock dataset.
 
-Inside the repository, create:  ```Data/<COUNTRY_CODE>/```
+### ✅ New step: built-in results verification
 
-Example:  ```Data/BRA/```
+- The script adds **automatic consistency checks** after the run (do areas balance between periods? do gains and losses add up?) and prints a clear OK/FAILED summary. The original README has no equivalent quality-check step — previously, this would need to be checked manually.
 
-2️⃣ Required Files
+### 📊 New step: summary table of total area by year
 
-Each country folder must contain:
+- A simple, easy-to-read table showing total area per land-use class for every year of the projection is generated at the end — a convenience addition not present in the original workflow.
 
-| File                                    | Description                      |
-| --------------------------------------- | -------------------------------- |
-| `FABLE.xlsx`                            | FABLE Calculator outputs         |
-| `Population2020.geojson`                | Population data                  |
-| `ProtectedAreas.geojson`                | Protected areas                  |
-| `TravelTime.geojson`                    | Travel time                      |
-| `LandCoverHILDA2015.geojson`            | initial land cover (MapBiomas but renamed HILDA to be readable by existing code)      |
-| `LandCoverHILDA2020.geojson`            | starting land cover (MapBiomas but renamed HILDA to be readable by existing code)     |
-| `LandCoverChangeHILDA2015_2020.geojson` | Historical Land-use transitions  |
-| `ForestManagement.geojson`              | Forest management                |
-| `Altitude.geojson`                      | Altitude                         |
-| `Slope.geojson`                         | Slope                            |
-| `GAEZCropDistribution2015.geojson`      | Crop yields                      |
-| `GLW4WorldGriddedLivestock2020.geojson` | Livestock                        |
+### 📦 Extra package requirements not listed in the README
 
-⚠️ Filenames must match exactly.
+- The script relies on several packages the README's "Requirements" section does not mention, including `here`, `ggnewscale`, `ggpattern`, `rnaturalearth`, `rnaturalearthdata`, `countrycode`, `stringr`, `readxl`, and `nloptr`.
 
-### Spatial files
+------------------------------------------------------------------------
 
-All spatial files must contain a column called:
- id_c 
-which uniquely identifies grid cells.
+## 3. What this means for other country teams
 
-### FABLE Calculator Outputs (FABLE.xlsx)
+Because this script hardcodes Brazil-specific values, file paths, and target numbers, it currently functions more as a **working/debugging version of the Brazil run** than a drop-in replacement for the generic `R/run_country.R` described in the main README. Before another team can reuse it, it would need:
 
-Each country must provide national land-use projections.
+1.  The two hardcoded absolute file paths replaced with files placed in `Data/<COUNTRY>/`, following the standard structure.
+2.  The hardcoded config file name, FABLE sheet name, and manual target totals turned into configurable parameters (e.g., read from the `.yml` config).
+3.  The new GHG-emissions and verification steps documented as optional/standard parts of the pipeline, with their own input requirements added to the "Data Preparation" section of the main README.
 
-Location: ```Data/<COUNTRY>/FABLE.xlsx```
-
-Example: ````Data/BRA/FABLE.xlsx````
-
-#### Required Sheets
-1) Baseline
-
-Contains national baseline areas.
-
-| LandCover     | value |
-| ------------- | ----- |
-| forest        | 25000 |
-| cropland      | 18000 |
-| pasture       | 16000 |
-| urban         | 2000  |
-| newforest     | 5000  |
-| not relevant  | 4000  |
-
-2) Pathway Sheets
-
-One sheet per pathway:
-````
-CT (Current Trends)
-NDC (Nationally Determined Contributions)
-````
-
-Each sheet must contain:
-
-| Column        | Description        |
-| ------------- | ------------------ |
-| LandCoverInit | Initial land cover |
-| YearStart     | Start year         |
-| YearEnd       | End year           |
-| ToForest      | → Forest           |
-| ToOtherLand   | → Other land       |
-| ToCropland    | → Cropland         |
-| ToPasture     | → Pasture          |
-| ToUrban       | → Urban            |
-| ToNewForest   | → New forest       |
-
-These are copied from:
-````
-FABLE-C → Sheet: 4_calc_land → Table: calc_landmatrix
-````
-## ⚙️ Configuration
-
-1️⃣ Create a Config File
-
-Go to: ```config/```
-
-2️⃣Copy the template:
-```
-template.yml
-```
-3️⃣Rename it, for example:
-```
-BRA.yml
-```
-4️⃣Edit the Config File
-
-Example:
-```r
-country: "BRA"
-pathway: "CurrentTrends"
-start_map_source: "HILDA"
-
-data_root: "Data"
-output_root: "Output"
-
-seed: 1234
-mnl_niter: 100
-mnl_nburn: 50
-
-crs_equal_area: 4326
-pixel_res_m: 50000
-```
-Main Parameters
-| Parameter          | Description                                |
-| ------------------ | ------------------------------------------ |
-| `country`          | ISO3 country code                          |
-| `pathway`          | FABLE scenario                             |
-| `start_map_source` | HILDA (ESACCI or Copernicus)               |
-| `pixel_res_m`      | Raster resolution (50000 / 10000 / 1000 m) |
-Dates and output tags are generated automatically.
-
-## 📂 Setting the Working Directory 
-
-Before running the workflow, R must know where your project folder is.
-This is called setting the working directory.
-
-All paths in the scripts assume that your working directory is the root of the DownscalingFABLE repository.
-
-✅ Option 1 - Use RStudio Projects
-
-Open RStudio
-
-Click File → Open Project
-
-Select:
-```
-DownscalingFABLE/DownscalingFABLE.Rproj
-```
-
-RStudio will automatically set the working directory to the project root.
-
-You can check with:
-```r
-getwd()
-```
-
-It should show something like:
-```
-.../DownscalingFABLE
-```
-✅ Option 2 — Manually Set the Directory in R
-
-If you are not using an .Rproj file:
-
-Step 1: Find your project folder
-
-```
-Example:
-C:/Users/Name/Documents/GitHub/DownscalingFABLE
-```
-Step 2: Set it in R
-```r
-setwd("C:/Users/Name/Documents/GitHub/DownscalingFABLE")
-```
-
-Then check:
-```r
-getwd()
-```
-
-## ▶️ Running the Workflow
-
-Once the working directory is correctly set:
-
-```r
-source("R/run_country.R")
-```
-Replace .yml file with your configuration file.
-
-📤 Outputs
-Results are saved in:
-```
-Output/<COUNTRY_CODE>/
-```
-Example:
-```
-Output/BRA/
-```
-This folder contains:
-  * Harmonized baseline maps
-  * Rasterized ID layers
-  * Model coefficients
-  * Downscaled land-use projections
-  * Intermediate datasets
-These outputs are ready for mapping and analysis.
-
-## ▶️ Changing land use files
-
-Land use geojson files can also be changed by reading any geojson file through sf and class names modified to fit FABLE's nomenclature
-
-Changes are described in geojson_changes
-
-```r
-source("R/geojson_changes.R")
-```
-
-## ▶️ Adding protected area restrictions
-
-Protected areas were also implemented in the downscale function by adding a restrictions argument in the function and the run_downscale.R file
-These are also implemented in the run_country.R file
-
-
-```r
-source("R/run_downscale_restricted.R")
-```
-
-## ▶️ Land use area visualization with terra
-
-Land use area plots visualized with terra were also implemented in order to better compare different land use classes, so these classes were in the same scale
-
-
-```r
-source("R/terra_plots.R")
-```
-
-## ⚠️ Common Issues
-
-1) **Missing Files**
-    
-```Error: file not found```
-  
-➡️ Check filenames in Data/\<country>/
-  
-2) **Missing id_c**
-
-```Error: missing join key```
-
-➡️ Ensure all GeoJSON files contain id_c
-
-3) **Package Not Found**
-
-```Error: FABLEDownscalR not installed```
-  
-➡️ Re-run installation step
-
-4) **Model Fails to Converge**
-
-```Warning: MNL did not converge    ```
-
-➡️ Usually due to limited data for some land uses
-  
-➡️ The workflow will automatically apply regularization or skip unstable origins
-
-## 📄 Documentation
-
-Detailed methods are available in the package vignette (forthcoming)
-
-The full technical pipeline is documented in the FABLEDownscalR repository
+------------------------------------------------------------------------
 
 ## 📩 Support
 
-For questions or issues, please contact:
-Clara Douzal: clara.douzal@unsdsn.org
-Or open an issue on GitHub.
+For questions about this script or the underlying workflow, please contact: António Santos: [acasantos\@ciencias.ulisboa.pt](mailto:acasantos@ciencias.ulisboa.pt){.email} Or open an issue on GitHub.
