@@ -73,7 +73,42 @@ The original `README.md` describes a **generic, reusable workflow**: any country
 
 ------------------------------------------------------------------------
 
-## 3. What this means for other country teams
+## 3. Two new mapping scripts: `luc_change_map.R` and `ghg_emissions_map.R`
+
+Alongside the main run script, two standalone R scripts turn its outputs into maps. Neither is mentioned in the original project README — both are new additions that pick up where `run_country_changes.R` leaves off, using the files it saves to `Output/BRA/`.
+
+### 🗺️ `luc_change_map.R` — Land-use change map, 2020–2050
+
+**What it shows:** For each land-use class (forest, cropland, pasture, other land, urban), one map panel of Brazil showing which grid cells **gained** that land use and which **lost** it between 2020 and 2050 — red for loss, blue for gain — all classes side by side in a single grid image, with state and biome boundaries drawn on top.
+
+**How it works, simply:**
+1. Loads the downscaled land-use results (`...downscaled_LUC.rds`) and the matching grid raster (`...rasterized_layer.tif`), both produced by `run_country_changes.R`.
+2. Matches each grid cell's ID in the results table to its ID in the raster.
+3. For each class, adds up the total area in that class in 2020 and again in 2050, per grid cell, and subtracts to get the net change.
+4. Drops the temporary "new forest" category, since it is not of interest for this particular map.
+5. Colors every class on the **same** red-to-blue scale, so the panels are directly comparable to one another.
+6. Overlays Brazilian state borders (thin, light grey) and biome borders (thick, black) and saves one combined image, `luc_change_2020_2050.png`.
+
+### 🌱 `ghg_emissions_map.R` — Cumulative GHG (biomass) emissions map, 2020–2050
+
+**What it shows:** For each land-use class, a map of Brazil showing where land-use change led to a net **release** of greenhouse gases (red) versus a net **removal/sequestration** (blue/green), added up across every 5-year period from 2020 to 2050 — plus one extra panel summing across all classes together.
+
+**How it works, simply:**
+1. Loads the same downscaled results file as above, but this time uses its `GHG_biomass` column (the emissions/sequestration estimate calculated inside `run_country_changes.R`).
+2. Adds up `GHG_biomass` for every grid cell, land-use class, and time period, treating any missing values as zero.
+3. Matches each cell to the raster the same way as the land-use-change map.
+4. Sums each cell's GHG value across **all** periods (2020–2050), separately for each class, producing one "running total" map per class.
+5. Adds a combined "Total (all classes)" panel summing across all classes.
+6. Because cropland's emissions are far larger in magnitude than other classes, each class panel gets its **own** color scale (so small signals aren't washed out), while the "Total" panel uses a special compressed scale to make both the widespread small sequestration signal and the rare large emission hot-spots visible on the same map.
+7. Overlays the same state and biome borders and saves one combined image, `ghg_emissions_cumulative_by_class.png`.
+
+### ⚠️ Same portability caveat as the main script
+
+Both mapping scripts share the same limitation noted above for `run_country_changes.R`: all of their inputs — the downscaled results, the rasterized grid, and the Brazilian state/biome boundary shapefiles — are read from **hardcoded absolute paths on one person's computer** (`C:/Users/User/Desktop/...`), rather than from a shared, documented location. They are also **Brazil-specific** (state/biome boundary files, "BRA" in the file names), so as written they cannot be reused by another country team without editing the paths and swapping in that country's boundary files.
+
+------------------------------------------------------------------------
+
+## 4. What this means for other country teams
 
 Because this script hardcodes Brazil-specific values, file paths, and target numbers, it currently functions more as a **working/debugging version of the Brazil run** than a drop-in replacement for the generic `R/run_country.R` described in the main README. Before another team can reuse it, it would need:
 
